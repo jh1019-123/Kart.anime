@@ -1,0 +1,6 @@
+{
+  "name": "3D Kart-Rider Anime",
+  "description": "상점 카트 뽑기 기능과 추가 맵 선택 기능을 갖춘 3D 애니메이션 스타일 카트 레이싱 게임",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

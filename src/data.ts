@@ -3,7 +3,7 @@ import { KartInfo, MapInfo } from './types';
 export const KARTS: KartInfo[] = [
   {
     id: 'pink_thunder',
-    name: '핑크 썬더 (Pink Thunder)',
+    name: '커먼핑크',
     color: 0xff007f, // Neon Pink
     flameColor: 0x22d3ee, // Cyan flame
     description: '기본형 카트로 부드러운 코너링과 우수한 범용성을 완비하고 있습니다.',
@@ -18,7 +18,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'blue_lightning',
-    name: '블루 라이트닝 (Blue Lightning)',
+    name: '스카이 브라이트닝',
     color: 0x06b6d4, // Neon Cyan
     flameColor: 0xec4899, // Pink flame
     description: '최고 속도가 극대화되었으며, 미래형 전자기 충전 가속 엔진을 탑재했습니다.',
@@ -33,7 +33,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'golden_hero',
-    name: '골든 히어로 (Golden Hero)',
+    name: '브레이브칼리버',
     color: 0xeab308, // Neon Yellow / Gold
     flameColor: 0xf97316, // Orange flame
     description: '드리프트 시 부스터 충전이 비약적으로 빠르며, 아이템 효율이 탁월합니다.',
@@ -48,7 +48,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'shadow_knight',
-    name: '샤도우 나이트 (Shadow Knight)',
+    name: '섀도우크롤러',
     color: 0x475569, // Charcoal Slate
     flameColor: 0x8b5cf6, // Violet flame
     description: '지면 밀착 주행 능력이 뛰어나 드리프트 중 속도 손실이 극단적으로 적습니다.',
@@ -63,7 +63,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'neon_dragon',
-    name: '네온 드래곤 (Neon Dragon)',
+    name: '네온 페라리',
     color: 0xa855f7, // Deep Purple
     flameColor: 0x22c55e, // Bright Green flame
     description: '레전더리 등급 카트. 압도적인 가속력과 초고속 튜닝을 거친 최강의 머신입니다.',

@@ -23,3 +23,28 @@ export interface MapInfo {
   skyColor: number; // Fog / Background 색상 (Hex)
   points: [number, number, number][]; // 3D 경로 좌표들
 }
+
+// Network P2P Room Structures
+export type PeerRole = 'host' | 'client';
+
+export interface Participant {
+  peerId: string;
+  name: string;
+  role: PeerRole;
+  isReady: boolean;
+  kartId: string;
+  lastOutcome?: RaceOutcome;
+  currentLap?: number;
+  currentSpeed?: number;
+}
+
+export interface RaceOutcome {
+  peerId: string;
+  name: string;
+  kartName: string;
+  finalTime?: number; // millisecond timestamp or formatted standard text
+  finished: boolean;
+  driftCount: number;
+  boostersUsed: number;
+  maxSpeed: number;
+}

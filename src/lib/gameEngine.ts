@@ -5,6 +5,10 @@ import { MapInfo } from '../types';
 export const AudioEngine = {
   ctx: null as AudioContext | null,
   engineSnd: null as { osc: OscillatorNode; gain: GainNode; filter: BiquadFilterNode } | null,
+  driftSnd: null as { osc: OscillatorNode; noise: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode } | null,
+  bgmInterval: null as any,
+  bgmStep: 0,
+  bgmIsPlaying: false,
 
   init() {
     try {
@@ -33,9 +37,9 @@ export const AudioEngine = {
       
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(200 + (rpmRatio * 400), this.ctx.currentTime);
+      filter.frequency.setValueAtTime(180 + (rpmRatio * 320), this.ctx.currentTime);
       
-      gainNode.gain.setValueAtTime(0.04 + (rpmRatio * 0.04), this.ctx.currentTime);
+      gainNode.gain.setValueAtTime(0.03 + (rpmRatio * 0.03), this.ctx.currentTime);
       
       osc.connect(filter);
       filter.connect(gainNode);
@@ -50,11 +54,86 @@ export const AudioEngine = {
   },
 
   stopEngine() {
+    this.setDriftActive(false);
     if (this.engineSnd) {
       try {
         this.engineSnd.osc.stop();
       } catch (e) {}
       this.engineSnd = null;
+    }
+  },
+
+  setDriftActive(active: boolean) {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+
+    if (active) {
+      if (this.driftSnd) return;
+      try {
+        const now = this.ctx.currentTime;
+        
+        // Synthesise friction white noise
+        const bufferSize = this.ctx.sampleRate * 2;
+        const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+          output[i] = Math.random() * 2 - 1;
+        }
+
+        const noiseNode = this.ctx.createBufferSource();
+        noiseNode.buffer = noiseBuffer;
+        noiseNode.loop = true;
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.setValueAtTime(350, now);
+        noiseFilter.Q.setValueAtTime(1.5, now);
+
+        const osc = this.ctx.createOscillator();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(145, now);
+        osc.frequency.linearRampToValueAtTime(120, now + 1.0);
+
+        const oscFilter = this.ctx.createBiquadFilter();
+        oscFilter.type = 'lowpass';
+        oscFilter.frequency.setValueAtTime(220, now);
+
+        const gainNode = this.ctx.createGain();
+        gainNode.gain.setValueAtTime(0, now);
+        gainNode.gain.linearRampToValueAtTime(0.045, now + 0.08);
+
+        noiseNode.connect(noiseFilter);
+        noiseFilter.connect(gainNode);
+
+        osc.connect(oscFilter);
+        oscFilter.connect(gainNode);
+
+        gainNode.connect(this.ctx.destination);
+
+        noiseNode.start(now);
+        osc.start(now);
+
+        this.driftSnd = {
+          osc,
+          noise: noiseNode,
+          filter: noiseFilter,
+          gain: gainNode
+        };
+      } catch (e) {
+        console.warn("Continuous drift sound playback failed:", e);
+      }
+    } else {
+      if (!this.driftSnd) return;
+      try {
+        const now = this.ctx.currentTime;
+        const snd = this.driftSnd;
+        snd.gain.gain.setValueAtTime(snd.gain.gain.value, now);
+        snd.gain.gain.linearRampToValueAtTime(0, now + 0.1);
+        
+        snd.osc.stop(now + 0.12);
+        snd.noise.stop(now + 0.12);
+      } catch (e) {}
+      this.driftSnd = null;
     }
   },
 
@@ -64,18 +143,24 @@ export const AudioEngine = {
       const now = this.ctx.currentTime;
       const osc = this.ctx.createOscillator();
       const gainNode = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
 
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(180, now);
-      osc.frequency.exponentialRampToValueAtTime(1000, now + 1.2);
+      osc.frequency.setValueAtTime(140, now);
+      osc.frequency.exponentialRampToValueAtTime(420, now + 0.8);
 
-      gainNode.gain.setValueAtTime(0.18, now);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, now + 2.5);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(480, now);
+      filter.frequency.exponentialRampToValueAtTime(140, now + 1.2);
 
-      osc.connect(gainNode);
+      gainNode.gain.setValueAtTime(0.12, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+
+      osc.connect(filter);
+      filter.connect(gainNode);
       gainNode.connect(this.ctx.destination);
       osc.start();
-      osc.stop(now + 2.5);
+      osc.stop(now + 1.4);
     } catch (e) {}
   },
 
@@ -85,15 +170,20 @@ export const AudioEngine = {
       const now = this.ctx.currentTime;
       const osc = this.ctx.createOscillator();
       const gainNode = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
       
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(320, now);
-      osc.frequency.linearRampToValueAtTime(240, now + 0.35);
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.linearRampToValueAtTime(140, now + 0.3);
 
-      gainNode.gain.setValueAtTime(0.08, now);
-      gainNode.gain.exponentialRampToValueAtTime(0.005, now + 0.35);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(280, now);
 
-      osc.connect(gainNode);
+      gainNode.gain.setValueAtTime(0.05, now);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(filter);
+      filter.connect(gainNode);
       gainNode.connect(this.ctx.destination);
       osc.start();
       osc.stop(now + 0.35);
@@ -104,29 +194,52 @@ export const AudioEngine = {
     if (!this.ctx) return;
     try {
       const now = this.ctx.currentTime;
-      const osc1 = this.ctx.createOscillator();
-      const osc2 = this.ctx.createOscillator();
+      const freqs = [392.00, 493.88, 587.33, 783.99]; // G4, B4, D5, G5 - Warm major chord
+      freqs.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+        
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(800, now);
+        
+        gain.gain.setValueAtTime(0, now);
+        gain.gain.linearRampToValueAtTime(0.03, now + idx * 0.04 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.28);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.start(now + idx * 0.04);
+        osc.stop(now + idx * 0.04 + 0.32);
+      });
+    } catch (e) {}
+  },
+
+  playShuffleTick() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
-
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(523.25, now); // C5
-      osc1.frequency.setValueAtTime(659.25, now + 0.1); // E5
-
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(783.99, now + 0.15); // G5
-      osc2.frequency.setValueAtTime(1046.50, now + 0.25); // C6
-
-      gain.gain.setValueAtTime(0.1, now);
-      gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
-
-      osc1.connect(gain);
-      osc2.connect(gain);
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(180, now); // low sweet organic click
+      osc.frequency.exponentialRampToValueAtTime(90, now + 0.04);
+      
+      gain.gain.setValueAtTime(0.03, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+      
+      osc.connect(gain);
       gain.connect(this.ctx.destination);
-
-      osc1.start();
-      osc2.start();
-      osc1.stop(now + 0.6);
-      osc2.stop(now + 0.6);
+      
+      osc.start();
+      osc.stop(now + 0.05);
     } catch (e) {}
   },
 
@@ -145,7 +258,7 @@ export const AudioEngine = {
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(150, now);
 
-      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.setValueAtTime(0.2, now);
       gain.gain.exponentialRampToValueAtTime(0.01, now + 0.6);
 
       osc.connect(filter);
@@ -155,6 +268,282 @@ export const AudioEngine = {
       osc.start();
       osc.stop(now + 0.6);
     } catch (e) {}
+  },
+
+  playBGM(mapId: string = 'neon_sky_way') {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+    if (this.bgmIsPlaying) return;
+    this.bgmIsPlaying = true;
+    this.bgmStep = 0;
+
+    let stepDuration = 0.115; // 130 BPM sixteenth note steps
+    let waveType: 'sine' | 'triangle' | 'sawtooth' | 'square' = 'sine';
+    let filterFreq = 950;
+    
+    // Default upbeat melody (Neon Sky Way)
+    let mNotes = [
+      440.00, 0, 440.00, 493.88, 523.25, 0, 523.25, 587.33, 
+      659.25, 0, 659.25, 587.33, 523.25, 493.88, 440.00, 0,
+      523.25, 0, 523.25, 587.33, 659.25, 0, 659.25, 698.46,
+      783.99, 0, 783.99, 698.46, 659.25, 587.33, 523.25, 0,
+      587.33, 0, 587.33, 659.25, 698.46, 0, 698.46, 783.99,
+      880.00, 0, 783.99, 0, 698.46, 0, 587.33, 0,
+      659.25, 0, 659.25, 698.46, 783.99, 0, 783.99, 880.00,
+      987.77, 880.00, 783.99, 698.46, 659.25, 587.33, 493.88, 0
+    ];
+
+    let bNotes = [
+      110.00, 110.00, 110.00, 110.00,
+      87.31, 87.31, 87.31, 87.31,
+      98.00, 98.00, 98.00, 98.00,
+      82.41, 82.41, 82.41, 82.41
+    ];
+
+    if (mapId === 'cyberspace_tunnel') {
+      // Fast Cyber Techno (155 BPM)
+      stepDuration = 0.096;
+      waveType = 'triangle';
+      filterFreq = 1200;
+      mNotes = [
+        261.63, 311.13, 392.00, 466.16, 523.25, 466.16, 392.00, 311.13,
+        293.66, 349.23, 440.00, 523.25, 587.33, 523.25, 440.00, 349.23,
+        261.63, 311.13, 392.00, 466.16, 523.25, 466.16, 392.00, 311.13,
+        349.23, 415.30, 523.25, 622.25, 698.46, 622.25, 523.25, 415.30,
+        261.63, 0, 392.00, 0, 523.25, 0, 466.16, 0,
+        293.66, 0, 440.00, 0, 587.33, 0, 523.25, 0,
+        261.63, 0, 392.00, 0, 523.25, 0, 466.16, 0,
+        349.23, 349.23, 415.30, 415.30, 523.25, 523.25, 622.25, 622.25
+      ];
+      bNotes = [
+        65.41, 65.41, 65.41, 65.41,
+        73.42, 73.42, 73.42, 73.42,
+        65.41, 65.41, 65.41, 65.41,
+        87.31, 87.31, 87.31, 87.31
+      ];
+    } else if (mapId === 'cosmic_highway') {
+      // Ethereal Space Trance (110 BPM)
+      stepDuration = 0.136;
+      waveType = 'sine';
+      filterFreq = 800;
+      mNotes = [
+        587.33, 0, 659.25, 0, 783.99, 0, 880.00, 0,
+        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
+        587.33, 0, 659.25, 0, 783.99, 0, 1174.66, 0,
+        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
+        587.33, 587.33, 659.25, 659.25, 783.99, 783.99, 880.00, 880.00,
+        987.77, 987.77, 880.00, 880.00, 783.99, 783.99, 659.25, 659.25,
+        587.33, 587.33, 659.25, 659.25, 783.99, 783.99, 1174.66, 1174.66,
+        1318.51, 0, 1174.66, 0, 987.77, 0, 880.00, 0
+      ];
+      bNotes = [
+        73.42, 73.42, 82.41, 82.41,
+        98.00, 98.00, 82.41, 82.41,
+        73.42, 73.42, 82.41, 82.41,
+        110.00, 110.00, 98.00, 98.00
+      ];
+    } else if (mapId === 'lava_crevice') {
+      // Intense Low-pass Churn Heavy Metal/Industrial Beat (138 BPM)
+      stepDuration = 0.108;
+      waveType = 'triangle';
+      filterFreq = 600;
+      mNotes = [
+        146.83, 146.83, 0, 146.83, 164.81, 164.81, 0, 164.81,
+        174.61, 174.61, 0, 174.61, 196.00, 0, 220.00, 0,
+        146.83, 146.83, 0, 146.83, 164.81, 164.81, 0, 164.81,
+        261.63, 0, 246.94, 0, 220.00, 0, 196.00, 0,
+        146.83, 146.83, 146.83, 146.83, 164.81, 164.81, 164.81, 164.81,
+        174.61, 174.61, 174.61, 174.61, 220.00, 220.00, 220.00, 220.00,
+        146.83, 146.83, 146.83, 146.83, 164.81, 164.81, 164.81, 164.81,
+        293.66, 293.66, 261.63, 261.63, 220.00, 220.00, 196.00, 196.00
+      ];
+      bNotes = [
+        73.42, 73.42, 73.42, 73.42,
+        82.41, 82.41, 82.41, 82.41,
+        87.31, 87.31, 87.31, 87.31,
+        98.00, 98.00, 110.00, 110.00
+      ];
+    } else if (mapId === 'frozen_glacier') {
+      // Sweet Icy Bell Winter Chime (122 BPM)
+      stepDuration = 0.123;
+      waveType = 'sine';
+      filterFreq = 1605;
+      mNotes = [
+        523.25, 587.33, 659.25, 783.99, 880.00, 0, 880.00, 0,
+        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
+        659.25, 698.46, 783.99, 880.00, 987.77, 0, 987.77, 0,
+        1046.50, 0, 987.77, 0, 880.00, 0, 783.99, 0,
+        523.25, 0, 659.25, 0, 880.00, 0, 783.99, 0,
+        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
+        659.25, 0, 783.99, 0, 987.77, 0, 880.00, 0,
+        1046.50, 1046.50, 987.77, 987.77, 880.00, 880.00, 783.99, 783.99
+      ];
+      bNotes = [
+        65.41, 65.41, 78.41, 78.41,
+        87.31, 87.31, 98.00, 98.00,
+        65.41, 65.41, 78.41, 78.41,
+        110.00, 110.00, 98.00, 98.00
+      ];
+    }
+
+    let noiseBuffer: AudioBuffer | null = null;
+    try {
+      const bufferSize = this.ctx.sampleRate * 0.3;
+      noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+    } catch (e) {}
+
+    const playBassNote = (freq: number, time: number) => {
+      if (!this.ctx) return;
+      try {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, time);
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.04, time + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.14);
+      } catch (e) {}
+    };
+
+    const playMelodyNote = (freq: number, time: number) => {
+      if (!this.ctx || freq <= 0) return;
+      try {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+        
+        osc.type = waveType;
+        osc.frequency.setValueAtTime(freq, time);
+        
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(filterFreq, time);
+        
+        gain.gain.setValueAtTime(0, time);
+        // Slightly lower melody gain to prevent distortion-related clipping
+        gain.gain.linearRampToValueAtTime(0.015, time + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.start(time);
+        osc.stop(time + 0.25);
+      } catch (e) {}
+    };
+
+    const playKick = (time: number) => {
+      if (!this.ctx) return;
+      try {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(100, time);
+        osc.frequency.exponentialRampToValueAtTime(36, time + 0.08);
+        
+        gain.gain.setValueAtTime(0.12, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.12);
+      } catch (e) {}
+    };
+
+    const playSnare = (time: number) => {
+      if (!this.ctx || !noiseBuffer) return;
+      try {
+        const source = this.ctx.createBufferSource();
+        source.buffer = noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 900;
+        
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.03, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+        
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        source.start(time);
+        source.stop(time + 0.15);
+      } catch (e) {}
+    };
+
+    const playHihat = (time: number) => {
+      if (!this.ctx || !noiseBuffer) return;
+      try {
+        const source = this.ctx.createBufferSource();
+        source.buffer = noiseBuffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.value = 8000;
+        
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.015, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+        
+        source.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        source.start(time);
+        source.stop(time + 0.05);
+      } catch (e) {}
+    };
+
+    const runScheduler = () => {
+      if (!this.bgmIsPlaying || !this.ctx) return;
+      
+      const lookAhead = 0.05;
+      const scheduleTime = this.ctx.currentTime + lookAhead;
+      
+      const sequenceLength = mNotes.length;
+      const currentStep = this.bgmStep % sequenceLength;
+      const barIdx = Math.floor((this.bgmStep % 32) / 8);
+      
+      const stepInBeat = currentStep % 4;
+      if (stepInBeat === 0) {
+        playKick(scheduleTime);
+      } else if (stepInBeat === 2) {
+        playSnare(scheduleTime);
+      } else {
+        playHihat(scheduleTime);
+      }
+      
+      if (currentStep % 2 === 0) {
+        const bassFreq = bNotes[barIdx * 4 + Math.floor((currentStep % 8) / 2)] || 110;
+        playBassNote(bassFreq, scheduleTime);
+      }
+      
+      const melodyFreq = mNotes[currentStep];
+      if (melodyFreq && melodyFreq > 0) {
+        playMelodyNote(melodyFreq, scheduleTime);
+      }
+      
+      this.bgmStep++;
+    };
+
+    this.bgmInterval = setInterval(runScheduler, stepDuration * 1000);
+  },
+
+  stopBGM() {
+    if (this.bgmInterval) {
+      clearInterval(this.bgmInterval);
+      this.bgmInterval = null;
+    }
+    this.bgmIsPlaying = false;
   }
 };
 
@@ -180,6 +569,9 @@ export class GameEngine {
   lap = 1;
   maxLaps = 3;
   lapCheckpoints = [false, false];
+  isSuperNitro = false;
+  aiBoosterActive = false;
+  aiBoosterTimer = 0;
 
   speed = 0;
   maxSpeed = 1.15;
@@ -205,6 +597,9 @@ export class GameEngine {
   itemBoxes: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; active: boolean; respawnTimer: number }> = [];
   obstacles: Array<{ mesh: THREE.Mesh; position: THREE.Vector3 }> = [];
   particleGroup: THREE.Mesh[] = [];
+
+  smokeGeometry!: THREE.DodecahedronGeometry;
+  boosterGeometry!: THREE.ConeGeometry;
 
   cameraView: 'isometric' | 'chase' | 'first' = 'isometric';
 
@@ -252,8 +647,8 @@ export class GameEngine {
     this.initTrack(mapInfo.points);
     this.init3D(mapInfo.skyColor);
     this.buildTrack();
-    this.playerKart = this.createKart(playerKartColor, playerFlameColor);
-    this.aiKart = this.createKart(aiKartColor, 0xfacc15);
+    this.playerKart = this.createKart(playerKartColor, playerFlameColor, true);
+    this.aiKart = this.createKart(aiKartColor, 0xfacc15, false);
 
     this.resetRace();
   }
@@ -272,16 +667,20 @@ export class GameEngine {
 
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.enabled = false;
 
     this.container.appendChild(this.renderer.domElement);
 
+    // Instantiate optimized shared geometries once to prevent garbage collection stutters
+    this.smokeGeometry = new THREE.DodecahedronGeometry(1.0, 1);
+    this.boosterGeometry = new THREE.ConeGeometry(1.0, 1.0, 4);
+    this.boosterGeometry.rotateX(-Math.PI / 2);
+
     // Light Setup
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.15);
     this.scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xc084fc, 1.2);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
     dirLight.position.set(50, 200, 50);
     this.scene.add(dirLight);
 
@@ -300,12 +699,23 @@ export class GameEngine {
   buildTrack() {
     const trackGeometry = new THREE.TubeGeometry(this.trackSpline, 200, 14, 8, true);
     const trackMaterial = new THREE.MeshBasicMaterial({
-      color: 0x111827,
+      color: 0x27272a, // asphalt gray for superb contrast
       side: THREE.DoubleSide
     });
     this.roadMesh = new THREE.Mesh(trackGeometry, trackMaterial);
     this.roadMesh.scale.set(1, 0.01, 1);
     this.scene.add(this.roadMesh);
+
+    // Bright glowing neon-cyan centerline for perfect course alignment and outstanding visibility
+    const guideGeometry = new THREE.TubeGeometry(this.trackSpline, 300, 0.65, 8, true);
+    const guideMaterial = new THREE.MeshBasicMaterial({
+      color: 0x22d3ee, // Glowing Neon Cyan
+      side: THREE.DoubleSide
+    });
+    const guideMesh = new THREE.Mesh(guideGeometry, guideMaterial);
+    guideMesh.scale.set(1, 0.01, 1);
+    guideMesh.position.y = 0.06; // Raised slightly above the asphalt to avoid clipping z-fighting
+    this.scene.add(guideMesh);
 
     const pointsCount = 140;
     const splinePoints = this.trackSpline.getSpacedPoints(pointsCount);
@@ -377,7 +787,7 @@ export class GameEngine {
     this.scene.add(gateGroup);
   }
 
-  createKart(colorHex: number, nozzleColorHex: number) {
+  createKart(colorHex: number, nozzleColorHex: number, isPlayer: boolean = false) {
     const kartGroup = new THREE.Group();
 
     // Chassis body
@@ -433,6 +843,19 @@ export class GameEngine {
     nozzle.position.set(0, 0.55, -2.2);
     kartGroup.add(nozzle);
 
+    // Dynamic distinct overhead 3D indicator pointing to the kart
+    const markerGeo = new THREE.ConeGeometry(isPlayer ? 0.65 : 0.45, isPlayer ? 1.5 : 1.1, 4);
+    markerGeo.rotateX(Math.PI); // point downwards
+    const markerMat = new THREE.MeshBasicMaterial({
+      color: isPlayer ? 0x22d3ee : 0xf43f5e, // Cyan for player, Red for AI
+      transparent: true,
+      opacity: 0.95
+    });
+    const marker = new THREE.Mesh(markerGeo, markerMat);
+    marker.position.set(0, 5.2, 0); 
+    marker.name = "overhead_marker";
+    kartGroup.add(marker);
+
     this.scene.add(kartGroup);
     return { mesh: kartGroup, wheels, nozzle };
   }
@@ -441,7 +864,7 @@ export class GameEngine {
     this.itemBoxes.forEach(box => this.scene.remove(box.mesh));
     this.itemBoxes = [];
 
-    const totalBoxes = 12;
+    const totalBoxes = 6;
     for (let i = 0; i < totalBoxes; i++) {
       const t = (i + 0.5) / totalBoxes;
       const point = this.trackSpline.getPointAt(t);
@@ -471,14 +894,25 @@ export class GameEngine {
   }
 
   createSmokeParticle(position: THREE.Vector3, colorHex = 0xffffff, size = 0.6) {
-    const pGeo = new THREE.DodecahedronGeometry(size, 1);
+    // Avoid spawning too many particles to maintain 60 FPS
+    if (this.particleGroup.length > 80) {
+      const oldest = this.particleGroup.shift();
+      if (oldest) {
+        this.scene.remove(oldest);
+        if (oldest.material) {
+          (oldest.material as THREE.Material).dispose();
+        }
+      }
+    }
+
     const pMat = new THREE.MeshBasicMaterial({
       color: colorHex,
       transparent: true,
       opacity: 0.95
     });
-    const p = new THREE.Mesh(pGeo, pMat);
+    const p = new THREE.Mesh(this.smokeGeometry, pMat);
     p.position.copy(position);
+    p.scale.setScalar(size);
 
     p.userData = {
       vel: new THREE.Vector3(
@@ -486,6 +920,7 @@ export class GameEngine {
         (Math.random() * 0.12) + 0.08,
         (Math.random() - 0.5) * 0.15
       ),
+      initialSize: size,
       life: 1.0,
       decay: 0.04
     };
@@ -497,16 +932,25 @@ export class GameEngine {
   createBoosterFlame(position: THREE.Vector3, speedHeading: THREE.Vector3, isPlayer = true) {
     if (!position || !speedHeading || isNaN(position.x) || isNaN(speedHeading.x)) return;
 
-    const pGeo = new THREE.ConeGeometry(0.35, 1.5, 4);
-    pGeo.rotateX(-Math.PI / 2);
+    if (this.particleGroup.length > 80) {
+      const oldest = this.particleGroup.shift();
+      if (oldest) {
+        this.scene.remove(oldest);
+        if (oldest.material) {
+          (oldest.material as THREE.Material).dispose();
+        }
+      }
+    }
 
     const pMat = new THREE.MeshBasicMaterial({
       color: isPlayer ? (Math.random() > 0.4 ? 0xff007f : 0x22d3ee) : (Math.random() > 0.4 ? 0xf43f5e : 0xfacc15),
       transparent: true,
       opacity: 0.95
     });
-    const p = new THREE.Mesh(pGeo, pMat);
+    
+    const p = new THREE.Mesh(this.boosterGeometry, pMat);
     p.position.copy(position);
+    p.scale.set(0.35, 1.5, 0.35);
     
     // Guard against looking at identical position to prevent lookAt NaN/Matrix issues
     const targetLookAt = p.position.clone().add(speedHeading);
@@ -520,9 +964,11 @@ export class GameEngine {
         (Math.random() - 0.5) * 0.15,
         (Math.random() - 0.5) * 0.15
       )),
+      initialScale: new THREE.Vector3(0.35, 1.5, 0.35),
       life: 1.0,
       decay: 0.1
     };
+    
     this.scene.add(p);
     this.particleGroup.push(p);
   }
@@ -533,13 +979,21 @@ export class GameEngine {
       p.position.add(p.userData.vel);
       p.userData.life -= p.userData.decay;
 
-      p.scale.setScalar(p.userData.life);
-      (p.material as THREE.MeshBasicMaterial).opacity = p.userData.life;
+      if (p.userData.initialScale) {
+        p.scale.copy(p.userData.initialScale).multiplyScalar(p.userData.life);
+      } else {
+        p.scale.setScalar(p.userData.life * (p.userData.initialSize || 1.0));
+      }
+      
+      if (p.material) {
+        (p.material as THREE.MeshBasicMaterial).opacity = Math.max(0, p.userData.life);
+      }
 
       if (isNaN(p.userData.life) || p.userData.life <= 0) {
         this.scene.remove(p);
-        p.geometry.dispose();
-        (p.material as THREE.Material).dispose();
+        if (p.material) {
+          (p.material as THREE.Material).dispose();
+        }
         this.particleGroup.splice(i, 1);
       }
     }
@@ -648,11 +1102,21 @@ export class GameEngine {
 
     this.timer += 16.67;
 
+    // Rotate overhead markers for supreme 3D positioning visibility
+    if (this.playerKart && this.playerKart.mesh) {
+      const pMarker = this.playerKart.mesh.getObjectByName("overhead_marker");
+      if (pMarker) pMarker.rotation.y += 0.05;
+    }
+    if (this.aiKart && this.aiKart.mesh) {
+      const aMarker = this.aiKart.mesh.getObjectByName("overhead_marker");
+      if (aMarker) aMarker.rotation.y += 0.05;
+    }
+
     // A. Player Limits
     let currentLimit = this.maxSpeed;
     if (this.boosterActive) {
-      // Reduced boost multiplier from 1.5 to 1.28 for significantly better user control per request
-      currentLimit = this.maxSpeed * 1.28;
+      // Increased boost speed in Super Nitro for explosive sensation! Normal boost is 1.28
+      currentLimit = this.maxSpeed * (this.isSuperNitro ? 1.48 : 1.28);
       this.boosterTimer--;
 
       const rearOffset = new THREE.Vector3(0, 0.5, -2.2).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
@@ -697,6 +1161,7 @@ export class GameEngine {
         this.driftDirection = angleDiff > 0 ? 1 : -1;
         AudioEngine.playDrift();
       }
+      AudioEngine.setDriftActive(true);
 
       // Reduced drift curve scale from 1.45 to 1.22 for refined high-speed handling
       angleDiff *= 1.22;
@@ -707,7 +1172,7 @@ export class GameEngine {
       this.createSmokeParticle(driftTirePos, 0xff007f, 0.45);
 
       // Charge Gauge
-      this.boosterGauge += (1.0 * driftStatsWeight); // stats.drift influence
+      this.boosterGauge += ((this.isSuperNitro ? 5.5 : 1.0) * driftStatsWeight); // stats.drift influence
       if (this.boosterGauge >= 100) {
         this.boosterGauge = 0;
         this.boosterStock++;
@@ -715,7 +1180,10 @@ export class GameEngine {
       }
       this.onBoosterGaugeChange(this.boosterGauge);
     } else {
-      this.isDrifting = false;
+      if (this.isDrifting) {
+        this.isDrifting = false;
+        AudioEngine.setDriftActive(false);
+      }
       this.driftAngle *= 0.8;
     }
 
@@ -790,28 +1258,99 @@ export class GameEngine {
   }
 
   updateAIRacer() {
-    let aiSpeed = 0.0009 + (Math.sin(Date.now() * 0.001) * 0.00015);
+    if (!this.aiKart || !this.aiKart.mesh) return;
 
     if (this.aiKart.mesh.userData.spinTimer > 0) {
       this.aiKart.mesh.userData.spinTimer--;
-      this.aiKart.mesh.rotation.y += 0.3;
+      this.aiKart.mesh.rotation.y += 0.44; // Robust spinning
+      if (this.aiKart.mesh.userData.spinTimer % 2 === 0) {
+        this.createSmokeParticle(this.aiKart.mesh.position.clone(), 0xff5555, 0.4);
+      }
       return;
     }
 
-    this.aiProgress += aiSpeed;
+    // 1. Base engine speed with map adaptations
+    let baseSpeed = 0.00115; // Raised speed for challenging AI (prev: 0.0009)
+
+    // 2. Dynamic Boosting for AI
+    if (this.aiBoosterActive) {
+      baseSpeed *= 1.62;
+      this.aiBoosterTimer--;
+      
+      const rearOffset = new THREE.Vector3(0, 0.4, -1.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.aiKart.mesh.rotation.y);
+      const flamePos = this.aiKart.mesh.position.clone().add(rearOffset);
+      const heading = new THREE.Vector3(Math.sin(this.aiKart.mesh.rotation.y), 0, Math.cos(this.aiKart.mesh.rotation.y));
+      this.createBoosterFlame(flamePos, heading, false);
+
+      if (this.aiBoosterTimer <= 0) {
+        this.aiBoosterActive = false;
+      }
+    } else {
+      // Periodic automatic boost (Super Nitro mode fuels significantly more frequent boosts)
+      const boostThrottle = this.isSuperNitro ? 0.015 : 0.0018;
+      if (Math.random() < boostThrottle) {
+        this.aiBoosterActive = true;
+        this.aiBoosterTimer = this.isSuperNitro ? 140 : 120;
+      }
+    }
+
+    // 3. Intelligent Rubber-Banding
+    const pPos = this.playerKart.mesh.position;
+    const aiPos = this.aiKart.mesh.position;
+    const distanceToPlayer = aiPos.distanceTo(pPos);
+
+    const pT = this.getNearestTrackSplinePoint(pPos);
+    const aiT = this.aiProgress;
+    
+    let diff = pT - aiT;
+    if (diff < -0.5) diff += 1.0;
+    if (diff > 0.5) diff -= 1.0;
+
+    if (diff > 0.025 && distanceToPlayer > 12) {
+      // Player is leading! AI gains rubber-band speed boost to stay highly competitive
+      const catchupFactor = Math.min(1.45, 1.0 + (distanceToPlayer * 0.016));
+      baseSpeed *= catchupFactor;
+      
+      if (!this.aiBoosterActive && Math.random() < 0.01) {
+        this.aiBoosterActive = true;
+        this.aiBoosterTimer = 100;
+      }
+    } else if (diff < -0.06 && distanceToPlayer > 22) {
+      // AI is excessively leading. Slow down softly to preserve fun/fair play balance
+      baseSpeed *= 0.82;
+    }
+
+    // 4. Dodge Obstacles Intelligence
+    for (const obs of this.obstacles) {
+      const dist = aiPos.distanceTo(obs.position);
+      if (dist < 8.0) {
+        // Soft obstacle lateral evasion
+        const lateralDir = new THREE.Vector3(-Math.cos(this.aiKart.mesh.rotation.y), 0, Math.sin(this.aiKart.mesh.rotation.y));
+        const lateralMove = lateralDir.multiplyScalar(0.24);
+        aiPos.add(lateralMove);
+      }
+    }
+
+    // Update progress along track spline
+    this.aiProgress += baseSpeed;
     if (this.aiProgress > 1.0) this.aiProgress -= 1.0;
 
     const currentPos = this.aiKart.mesh.position.clone();
     const targetPos = this.trackSpline.getPointAt(this.aiProgress);
 
-    this.aiKart.mesh.position.lerp(targetPos, 0.18);
+    // Smoothly interpolate positions
+    this.aiKart.mesh.position.lerp(targetPos, 0.22);
     this.aiKart.mesh.position.y = 0;
 
+    // Smooth pointing rotation angles (no robotic sudden snapping)
     const lookAngle = Math.atan2(targetPos.x - currentPos.x, targetPos.z - currentPos.z);
-    this.aiKart.mesh.rotation.y = lookAngle;
+    let angleDiff = lookAngle - this.aiKart.mesh.rotation.y;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    this.aiKart.mesh.rotation.y += angleDiff * 0.28;
 
     this.aiKart.wheels.forEach(w => {
-      w.rotation.x += 0.7;
+      w.rotation.x += this.aiBoosterActive ? 1.5 : 0.8;
     });
   }
 
@@ -1026,6 +1565,12 @@ export class GameEngine {
 
   cleanup() {
     AudioEngine.stopEngine();
+    if (this.smokeGeometry) {
+      this.smokeGeometry.dispose();
+    }
+    if (this.boosterGeometry) {
+      this.boosterGeometry.dispose();
+    }
     if (this.renderer) {
       try {
         this.container.removeChild(this.renderer.domElement);

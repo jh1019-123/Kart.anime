@@ -14,6 +14,7 @@ export class PeerNetworkManager {
   onOutcomeReceived: (outcome: RaceOutcome) => void = () => {};
   onConnectionStatus: (status: string) => void = () => {};
   onPeerError: (err: string) => void = () => {};
+  onRoomIdAssigned: (roomId: string) => void = () => {};
 
   constructor(playerName: string) {
     this.myInfo = {
@@ -30,28 +31,42 @@ export class PeerNetworkManager {
     try {
       this.role = role;
       
-      // Destroy existing peer if any
-      this.cleanup();
-
       // Configure PeerJS to connect to public free cloud server
       const peerId = role === 'host' && roomIdAttempt ? `kart-room-${roomIdAttempt}` : undefined;
       
       this.peer = new Peer(peerId || '', {
         debug: 1, // Minimize warning logs to avoid console bloat
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            { urls: 'stun:stun3.l.google.com:19302' },
+            { urls: 'stun:stun4.l.google.com:19302' }
+          ]
+        }
       });
 
       this.peer.on('open', (id) => {
         this.myInfo.peerId = id;
         this.myInfo.role = role;
         
+        const displayCode = id.startsWith('kart-room-') ? id.replace('kart-room-', '') : id;
+        if (this.onRoomIdAssigned) {
+          this.onRoomIdAssigned(displayCode);
+        }
+        
         if (role === 'host') {
           this.participants = [this.myInfo];
           this.onParticipantsChange([...this.participants]);
-          this.onConnectionStatus(`방이 생성되었습니다! 코드: ${id.replace('kart-room-', '')}`);
+          this.onConnectionStatus(`방이 생성되었습니다! 초대 코드: ${displayCode}`);
         } else {
-          this.onConnectionStatus(`서버에 접속되었습니다. 방에 연결을 탐색중...`);
+          this.onConnectionStatus(`중계서버 접속 완료. 방장 신호 탐색 중...`);
           if (roomIdAttempt) {
-            this.connectToHost(`kart-room-${roomIdAttempt}`);
+            const targetId = roomIdAttempt.includes('kart-room-') || roomIdAttempt.length > 8
+              ? roomIdAttempt
+              : `kart-room-${roomIdAttempt}`;
+            this.connectToHost(targetId);
           }
         }
       });
@@ -64,12 +79,19 @@ export class PeerNetworkManager {
         this.handleIncomingConnection(conn);
       });
 
-      this.peer.on('error', (err) => {
+      this.peer.on('error', (err: any) => {
         console.error('PeerJS Error details:', err);
         let msg = '원인 불명의 오류가 발생했습니다.';
         if (err.type === 'peer-unavailable') {
           msg = '해당 참여 코드의 방을 찾을 수 없습니다. 올바른 방 번호인지 확인해주세요.';
         } else if (err.type === 'unavailable-id') {
+          if (role === 'host') {
+            console.log('Self-healing active: Fallback to random secure ID...');
+            this.onConnectionStatus('임의 코드 선점 완료 상태 감지! 안전한 대체 고유 주소로 자동 재생성 중...');
+            this.cleanup();
+            this.init('host', undefined);
+            return;
+          }
           msg = '해당 방 번호가 이미 사용 중입니다. 다른 방 번호를 입력해주세요.';
         }
         this.onPeerError(msg);

@@ -229,6 +229,7 @@ export default function App() {
     netManager.onConnectionStatus = (status) => setNetStatus(status);
     netManager.onPeerError = (err) => setNetError(err);
     netManager.onParticipantsChange = (list) => setParticipants(list);
+    netManager.onRoomIdAssigned = (assignedId) => setRoomIdLive(assignedId);
     
     netManager.onOutcomeReceived = (outcome) => {
       setLatestMultiplayerOutcomes(prev => {
@@ -240,7 +241,6 @@ export default function App() {
 
     netManager.init('host', code);
     setNetRole('host');
-    setRoomIdLive(code);
   };
 
   const handleClientJoin = () => {
@@ -256,13 +256,14 @@ export default function App() {
     setNetError(null);
     setLatestMultiplayerOutcomes([]);
 
-    const cleanCode = roomIdInput.trim().toUpperCase();
+    const cleanCode = roomIdInput.trim();
     const netManager = new PeerNetworkManager(playerNameInput);
     netManagerRef.current = netManager;
 
     netManager.onConnectionStatus = (status) => setNetStatus(status);
     netManager.onPeerError = (err) => setNetError(err);
     netManager.onParticipantsChange = (list) => setParticipants(list);
+    netManager.onRoomIdAssigned = (assignedId) => setRoomIdLive(assignedId);
     
     netManager.onGameStartReceived = (mapId, mode) => {
       setSelectedMapId(mapId);
@@ -276,7 +277,6 @@ export default function App() {
 
     netManager.init('client', cleanCode);
     setNetRole('client');
-    setRoomIdLive(cleanCode);
   };
 
   const handleDisconnectNetwork = () => {
@@ -1356,13 +1356,13 @@ export default function App() {
                           <h4 className="text-sm font-black text-white mt-2.5">참여 코드 입력으로 입장하기</h4>
                           
                           <div className="mt-4">
-                            <label className="text-[9.5px] text-gray-450 text-gray-450 block font-bold mb-1">방 참여 인클로저 코드 (4자리 영어/숫자)</label>
+                            <label className="text-[9.5px] text-gray-450 block font-bold mb-1">방 참여 인클로저 코드 (4자리 단축 코드 혹은 상세 고유 키)</label>
                             <input 
                               type="text"
                               value={roomIdInput}
                               onChange={(e) => setRoomIdInput(e.target.value)}
-                              placeholder="코드 입력 (예: C8FD)"
-                              maxLength={6}
+                              placeholder="코드 혹은 전체 키 입력"
+                              maxLength={80}
                               className="w-full bg-slate-900 border-2 border-slate-800 rounded-xl px-4 py-2 text-sm text-yellow-300 outline-none focus:border-cyan-500 font-black tracking-widest uppercase text-center font-mono"
                             />
                           </div>

@@ -389,11 +389,49 @@ export default function App() {
         const currentFmtTime = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${mils.toString().padStart(2, '0')}`;
         setGameTimeFormatted(currentFmtTime);
 
-        if (isMultiplayerActive && netManagerRef.current && netRole === 'client') {
+        if (isMultiplayerActive && netManagerRef.current) {
           frameCount++;
-          if (frameCount % 15 === 0) {
-            netManagerRef.current.clientSendTelemetry(instance.playerKart.lap, Math.round(instance.playerKart.speed * 85));
+          if (frameCount % 4 === 0) {
+            const pMesh = instance.playerKart.mesh;
+            const myPos = pMesh.position;
+            const myRotY = pMesh.rotation.y;
+            const myDriftAngle = instance.driftAngle;
+            const myIsDrifting = instance.isDrifting;
+            const myLap = instance.playerKart.lap;
+            const mySpeed = Math.round(instance.playerKart.speed * 85);
+
+            if (netRole === 'client') {
+              netManagerRef.current.clientSendTelemetry(
+                myLap,
+                mySpeed,
+                myPos.x,
+                myPos.y,
+                myPos.z,
+                myRotY,
+                myDriftAngle,
+                myIsDrifting,
+                nearestT
+              );
+            } else if (netRole === 'host') {
+              netManagerRef.current.hostSendTelemetry(
+                myLap,
+                mySpeed,
+                myPos.x,
+                myPos.y,
+                myPos.z,
+                myRotY,
+                myDriftAngle,
+                myIsDrifting,
+                nearestT
+              );
+            }
           }
+
+          instance.updateMultiplayerPositions(
+            netManagerRef.current.participants,
+            netManagerRef.current.myInfo.peerId,
+            isMultiplayerActive
+          );
         }
 
         if (minimapCanvasRef.current) {
@@ -1751,15 +1789,25 @@ export default function App() {
               
               <div className="space-y-1 text-xs font-mono font-bold leading-tight">
                 {isMultiplayerActive ? (
-                  participants.slice(0, 4).map((p, idx) => (
-                    <div key={p.peerId} className="flex justify-between items-center text-white">
-                      <span className="truncate max-w-[90px] flex items-center">
-                        <span className="w-3.5 h-3.5 rounded-full bg-cyan-500 text-[8.5px] text-slate-950 text-center font-bold mr-1 leading-3.5 inline-block">{idx + 1}</span>
-                        {p.name}
-                      </span>
-                      <span className="text-[9.5px] text-gray-500 font-bold">L{p.currentLap || 1}</span>
-                    </div>
-                  ))
+                  [...participants]
+                    .sort((a, b) => {
+                      const lapA = a.currentLap || 1;
+                      const lapB = b.currentLap || 1;
+                      if (lapA !== lapB) return lapB - lapA;
+                      const progA = a.progress || 0;
+                      const progB = b.progress || 0;
+                      return progB - progA;
+                    })
+                    .slice(0, 4)
+                    .map((p, idx) => (
+                      <div key={p.peerId} className="flex justify-between items-center text-white">
+                        <span className="truncate max-w-[90px] flex items-center">
+                          <span className="w-3.5 h-3.5 rounded-full bg-cyan-500 text-[8.5px] text-slate-950 text-center font-bold mr-1 leading-3.5 inline-block">{idx + 1}</span>
+                          {p.name}
+                        </span>
+                        <span className="text-[9.5px] text-gray-500 font-bold">L{p.currentLap || 1}</span>
+                      </div>
+                    ))
                 ) : (
                   <>
                     <div className={`flex justify-between items-center ${rPosition === '1위' ? 'text-pink-400' : 'text-gray-400'}`}>

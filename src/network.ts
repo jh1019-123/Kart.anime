@@ -192,12 +192,19 @@ export class PeerNetworkManager {
               return { 
                 ...p, 
                 currentLap: msg.payload.currentLap, 
-                currentSpeed: msg.payload.currentSpeed 
+                currentSpeed: msg.payload.currentSpeed,
+                x: msg.payload.x,
+                y: msg.payload.y,
+                z: msg.payload.z,
+                rotY: msg.payload.rotY,
+                driftAngle: msg.payload.driftAngle,
+                isDrifting: msg.payload.isDrifting,
+                progress: msg.payload.progress,
               };
             }
             return p;
           });
-          this.onParticipantsChange([...this.participants]);
+          this.broadcastParticipants();
         }
         break;
 
@@ -280,12 +287,55 @@ export class PeerNetworkManager {
   }
 
   // Client sends live telemetry during game active
-  clientSendTelemetry(currentLap: number, currentSpeed: number) {
+  clientSendTelemetry(
+    currentLap: number, 
+    currentSpeed: number, 
+    x?: number, 
+    y?: number, 
+    z?: number, 
+    rotY?: number, 
+    driftAngle?: number, 
+    isDrifting?: boolean,
+    progress?: number
+  ) {
     if (this.role !== 'client') return;
     this.sendToHost({
       type: 'race-telemetry',
-      payload: { currentLap, currentSpeed },
+      payload: { currentLap, currentSpeed, x, y, z, rotY, driftAngle, isDrifting, progress },
     });
+  }
+
+  // Host updates its own player telemetry in this.participants and broadcasts to all clients
+  hostSendTelemetry(
+    currentLap: number, 
+    currentSpeed: number, 
+    x?: number, 
+    y?: number, 
+    z?: number, 
+    rotY?: number, 
+    driftAngle?: number, 
+    isDrifting?: boolean,
+    progress?: number
+  ) {
+    if (this.role !== 'host') return;
+    this.participants = this.participants.map(p => {
+      if (p.peerId === this.myInfo.peerId) {
+        return {
+          ...p,
+          currentLap,
+          currentSpeed,
+          x,
+          y,
+          z,
+          rotY,
+          driftAngle,
+          isDrifting,
+          progress
+        };
+      }
+      return p;
+    });
+    this.broadcastParticipants();
   }
 
   // Send packet to Host

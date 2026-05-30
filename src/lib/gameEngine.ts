@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { MapInfo } from '../types';
+import { KARTS } from '../data';
 
 // Audio Synthesizer Engine
 export const AudioEngine = {
@@ -602,6 +603,7 @@ export class GameEngine {
   boosterGeometry!: THREE.ConeGeometry;
 
   cameraView: 'isometric' | 'chase' | 'first' = 'isometric';
+  multiplayerKarts = new Map<string, { mesh: THREE.Group; wheels: THREE.Mesh[]; nozzle: THREE.Mesh }>();
 
   // React Callbacks
   onLapChange: (lap: number) => void;
@@ -1260,6 +1262,13 @@ export class GameEngine {
   updateAIRacer() {
     if (!this.aiKart || !this.aiKart.mesh) return;
 
+    if (this.multiplayerKarts.size > 0) {
+      this.aiKart.mesh.visible = false;
+      return;
+    } else {
+      this.aiKart.mesh.visible = true;
+    }
+
     if (this.aiKart.mesh.userData.spinTimer > 0) {
       this.aiKart.mesh.userData.spinTimer--;
       this.aiKart.mesh.rotation.y += 0.44; // Robust spinning
@@ -1351,6 +1360,83 @@ export class GameEngine {
 
     this.aiKart.wheels.forEach(w => {
       w.rotation.x += this.aiBoosterActive ? 1.5 : 0.8;
+    });
+  }
+
+  updateMultiplayerPositions(participants: any[], myPeerId: string, isMultiplayerActive: boolean) {
+    if (!isMultiplayerActive) {
+      if (this.multiplayerKarts.size > 0) {
+        this.multiplayerKarts.forEach(kart => {
+          this.scene.remove(kart.mesh);
+        });
+        this.multiplayerKarts.clear();
+      }
+      return;
+    }
+
+    const activePeerIds = new Set<string>();
+
+    participants.forEach(p => {
+      if (p.peerId === myPeerId) return;
+      activePeerIds.add(p.peerId);
+
+      let kart = this.multiplayerKarts.get(p.peerId);
+      if (!kart) {
+        // Create new mesh representing this participant!
+        const pKartInfo = KARTS.find(k => k.id === p.kartId) || KARTS[0];
+        kart = this.createKart(pKartInfo.color, pKartInfo.flameColor, false);
+        
+        // Give a distinct cyan/blue indicator marker above friends/allies
+        const overheadMarker = kart.mesh.getObjectByName("overhead_marker") as THREE.Mesh;
+        if (overheadMarker && overheadMarker.material) {
+          (overheadMarker.material as THREE.MeshBasicMaterial).color.setHex(0x38bdf8);
+        }
+        
+        this.multiplayerKarts.set(p.peerId, kart);
+      }
+
+      // Smoothly interpolate position & rotation from telemetry
+      if (p.x !== undefined && p.y !== undefined && p.z !== undefined) {
+        const targetPos = new THREE.Vector3(p.x, p.y, p.z);
+        
+        // If they are brand new or far away (e.g. initial spawn), snap to position, otherwise lerp
+        if (kart.mesh.position.lengthSq() === 0 || kart.mesh.position.distanceTo(targetPos) > 40) {
+          kart.mesh.position.copy(targetPos);
+        } else {
+          kart.mesh.position.lerp(targetPos, 0.28);
+        }
+      }
+
+      if (p.rotY !== undefined) {
+        // Handle rotation wrapping smoothly
+        let targetRot = p.rotY;
+        let currentRot = kart.mesh.rotation.y;
+        let diff = targetRot - currentRot;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        while (diff > Math.PI) diff -= Math.PI * 2;
+        kart.mesh.rotation.y += diff * 0.28;
+      }
+
+      // Turn wheels if speed exists
+      const speed = p.currentSpeed || 0;
+      kart.wheels.forEach(w => {
+        w.rotation.x += speed > 0 ? 0.8 : 0;
+      });
+
+      // Show smoke/booster effects if drifting
+      if (p.isDrifting && Math.random() < 0.45) {
+        const rearOffset = new THREE.Vector3(0, 0.4, -1.8).applyAxisAngle(new THREE.Vector3(0, 1, 0), kart.mesh.rotation.y);
+        const driftTirePos = kart.mesh.position.clone().add(rearOffset);
+        this.createSmokeParticle(driftTirePos, 0xff007f, 0.4);
+      }
+    });
+
+    // Clean up karts for players who left the room
+    this.multiplayerKarts.forEach((kart, pId) => {
+      if (!activePeerIds.has(pId)) {
+        this.scene.remove(kart.mesh);
+        this.multiplayerKarts.delete(pId);
+      }
     });
   }
 
@@ -1565,6 +1651,14 @@ export class GameEngine {
 
   cleanup() {
     AudioEngine.stopEngine();
+    if (this.multiplayerKarts) {
+      this.multiplayerKarts.forEach(kart => {
+        try {
+          this.scene.remove(kart.mesh);
+        } catch (e) {}
+      });
+      this.multiplayerKarts.clear();
+    }
     if (this.smokeGeometry) {
       this.smokeGeometry.dispose();
     }

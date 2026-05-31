@@ -1017,6 +1017,8 @@ export class GameEngine {
     this.itemBoxes.forEach(box => this.scene.remove(box.mesh));
     this.itemBoxes = [];
 
+    if (this.gameMode !== 'item') return;
+
     const totalBoxes = 6;
     for (let i = 0; i < totalBoxes; i++) {
       const t = (i + 0.5) / totalBoxes;
@@ -1231,6 +1233,7 @@ export class GameEngine {
 
   activateEngine() {
     this.active = true;
+    this.spawnItemBoxes();
   }
 
   useBooster() {

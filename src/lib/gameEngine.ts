@@ -73,8 +73,8 @@ export const AudioEngine = {
       try {
         const now = this.ctx.currentTime;
         
-        // Synthesise friction white noise
-        const bufferSize = this.ctx.sampleRate * 2;
+        // 1. Physical asphalt grinding friction noise
+        const bufferSize = this.ctx.sampleRate * 2.5;
         const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
         const output = noiseBuffer.getChannelData(0);
         for (let i = 0; i < bufferSize; i++) {
@@ -85,34 +85,74 @@ export const AudioEngine = {
         noiseNode.buffer = noiseBuffer;
         noiseNode.loop = true;
 
+        // Bandpass Filter at 1450Hz with High Resonance (Q = 3.5) isolates authentic gravelly pavement scrapings
         const noiseFilter = this.ctx.createBiquadFilter();
         noiseFilter.type = 'bandpass';
-        noiseFilter.frequency.setValueAtTime(350, now);
-        noiseFilter.Q.setValueAtTime(1.5, now);
+        noiseFilter.frequency.setValueAtTime(1450, now);
+        noiseFilter.Q.setValueAtTime(3.5, now);
 
+        // 2. Resonant tonal squeeze rubber oscillators (High tire screech feedback)
         const osc = this.ctx.createOscillator();
         osc.type = 'triangle';
-        osc.frequency.setValueAtTime(145, now);
-        osc.frequency.linearRampToValueAtTime(120, now + 1.0);
+        osc.frequency.setValueAtTime(1180, now);
+        osc.frequency.linearRampToValueAtTime(820, now + 1.8);
 
-        const oscFilter = this.ctx.createBiquadFilter();
-        oscFilter.type = 'lowpass';
-        oscFilter.frequency.setValueAtTime(220, now);
+        const osc2 = this.ctx.createOscillator();
+        osc2.type = 'sine';
+        osc2.frequency.setValueAtTime(1200, now);
+        osc2.frequency.linearRampToValueAtTime(835, now + 1.8);
 
+        // Resonant squeal bandpass filter mimicking pressurized rubber scream
+        const squealFilter = this.ctx.createBiquadFilter();
+        squealFilter.type = 'bandpass';
+        squealFilter.frequency.setValueAtTime(1380, now);
+        squealFilter.frequency.linearRampToValueAtTime(1120, now + 1.8);
+        squealFilter.Q.setValueAtTime(6.5, now); // Extremely high-Q rings like a real tire screech
+
+        // 3. Stick-slip vibrato LFO (asphalt tread micro-shuddering)
+        // Authentic 24Hz chatter represents tires rapidly losing/regaining road grip
+        const lfo = this.ctx.createOscillator();
+        lfo.frequency.setValueAtTime(24, now); 
+        
+        const lfoGain = this.ctx.createGain();
+        lfoGain.gain.setValueAtTime(130, now); 
+        
+        lfo.connect(lfoGain);
+        lfoGain.connect(osc.frequency);
+        lfoGain.connect(osc2.frequency);
+        lfoGain.connect(squealFilter.frequency);
+
+        // Modulate physical gain flutter on friction noise to simulate road bumps
+        const noiseGainLFO = this.ctx.createGain();
+        noiseGainLFO.gain.setValueAtTime(0.5, now);
+        const lfoToGain = this.ctx.createGain();
+        lfoToGain.gain.setValueAtTime(0.18, now);
+        lfo.connect(lfoToGain);
+        lfoToGain.connect(noiseGainLFO.gain);
+
+        // Routing noise
+        noiseNode.connect(noiseFilter);
+        noiseFilter.connect(noiseGainLFO);
+
+        // Routing tonal screeches
+        osc.connect(squealFilter);
+        osc2.connect(squealFilter);
+
+        // Master gain with smooth clickless envelope
         const gainNode = this.ctx.createGain();
         gainNode.gain.setValueAtTime(0, now);
-        gainNode.gain.linearRampToValueAtTime(0.045, now + 0.08);
+        gainNode.gain.linearRampToValueAtTime(0.045, now + 0.05); // Snap climb
 
-        noiseNode.connect(noiseFilter);
-        noiseFilter.connect(gainNode);
-
-        osc.connect(oscFilter);
-        oscFilter.connect(gainNode);
+        noiseGainLFO.connect(gainNode);
+        squealFilter.connect(gainNode);
 
         gainNode.connect(this.ctx.destination);
 
+        // Fire physical engines
+        lfo.start(now);
         noiseNode.start(now);
         osc.start(now);
+        osc2.start(now);
 
         this.driftSnd = {
           osc,
@@ -120,6 +160,8 @@ export const AudioEngine = {
           filter: noiseFilter,
           gain: gainNode
         };
+        (this.driftSnd as any).osc2 = osc2;
+        (this.driftSnd as any).lfo = lfo;
       } catch (e) {
         console.warn("Continuous drift sound playback failed:", e);
       }
@@ -127,12 +169,18 @@ export const AudioEngine = {
       if (!this.driftSnd) return;
       try {
         const now = this.ctx.currentTime;
-        const snd = this.driftSnd;
+        const snd = this.driftSnd as any;
         snd.gain.gain.setValueAtTime(snd.gain.gain.value, now);
-        snd.gain.gain.linearRampToValueAtTime(0, now + 0.1);
+        snd.gain.gain.linearRampToValueAtTime(0, now + 0.05); // Smooth release
         
-        snd.osc.stop(now + 0.12);
-        snd.noise.stop(now + 0.12);
+        snd.osc.stop(now + 0.07);
+        if (snd.osc2) {
+          snd.osc2.stop(now + 0.07);
+        }
+        if (snd.lfo) {
+          snd.lfo.stop(now + 0.07);
+        }
+        snd.noise.stop(now + 0.07);
       } catch (e) {}
       this.driftSnd = null;
     }
@@ -142,26 +190,60 @@ export const AudioEngine = {
     if (!this.ctx) return;
     try {
       const now = this.ctx.currentTime;
+      
+      // 1. Heavy low-frequency saw flame rumble (the deep rocket power)
       const osc = this.ctx.createOscillator();
-      const gainNode = this.ctx.createGain();
-      const filter = this.ctx.createBiquadFilter();
-
+      const oscGain = this.ctx.createGain();
+      const lowFilter = this.ctx.createBiquadFilter();
+      
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(140, now);
-      osc.frequency.exponentialRampToValueAtTime(420, now + 0.8);
-
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(480, now);
-      filter.frequency.exponentialRampToValueAtTime(140, now + 1.2);
-
-      gainNode.gain.setValueAtTime(0.12, now);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
-
-      osc.connect(filter);
-      filter.connect(gainNode);
-      gainNode.connect(this.ctx.destination);
-      osc.start();
+      osc.frequency.setValueAtTime(75, now);
+      osc.frequency.exponentialRampToValueAtTime(50, now + 1.4);
+      
+      lowFilter.type = 'lowpass';
+      lowFilter.frequency.setValueAtTime(130, now);
+      
+      oscGain.gain.setValueAtTime(0, now);
+      oscGain.gain.linearRampToValueAtTime(0.12, now + 0.02);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+      
+      osc.connect(lowFilter);
+      lowFilter.connect(oscGain);
+      oscGain.connect(this.ctx.destination);
+      
+      // 2. High-gain sweeping fire noise ("화르르륵" ignition)
+      const bufferSize = this.ctx.sampleRate * 1.5;
+      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      
+      const noiseNode = this.ctx.createBufferSource();
+      noiseNode.buffer = noiseBuffer;
+      
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      // Flame sweeping dynamic: fast frequency sweep mimics fire gas burst ignition
+      noiseFilter.frequency.setValueAtTime(150, now);
+      noiseFilter.frequency.exponentialRampToValueAtTime(2500, now + 0.18);
+      noiseFilter.frequency.exponentialRampToValueAtTime(320, now + 1.3);
+      noiseFilter.Q.setValueAtTime(2.2, now);
+      
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0, now);
+      noiseGain.gain.linearRampToValueAtTime(0.24, now + 0.06); // Quick combustion burst!
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 1.4);
+      
+      noiseNode.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+      
+      osc.start(now);
+      noiseNode.start(now);
+      
       osc.stop(now + 1.4);
+      noiseNode.stop(now + 1.4);
     } catch (e) {}
   },
 
@@ -169,25 +251,56 @@ export const AudioEngine = {
     if (!this.ctx) return;
     try {
       const now = this.ctx.currentTime;
-      const osc = this.ctx.createOscillator();
-      const gainNode = this.ctx.createGain();
-      const filter = this.ctx.createBiquadFilter();
       
+      // 1. Quick noise burst for asphalt slip friction
+      const bufferSize = this.ctx.sampleRate * 0.25; 
+      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      const noiseNode = this.ctx.createBufferSource();
+      noiseNode.buffer = noiseBuffer;
+      
+      const noiseFilter = this.ctx.createBiquadFilter();
+      noiseFilter.type = 'bandpass';
+      noiseFilter.frequency.setValueAtTime(1400, now);
+      noiseFilter.Q.setValueAtTime(4.0, now);
+      
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0, now);
+      noiseGain.gain.linearRampToValueAtTime(0.08, now + 0.015);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      
+      noiseNode.connect(noiseFilter);
+      noiseFilter.connect(noiseGain);
+      noiseGain.connect(this.ctx.destination);
+      
+      // 2. High squealing pitch oscillator slide
+      const osc = this.ctx.createOscillator();
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(220, now);
-      osc.frequency.linearRampToValueAtTime(140, now + 0.3);
-
-      filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(280, now);
-
-      gainNode.gain.setValueAtTime(0.05, now);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-
-      osc.connect(filter);
-      filter.connect(gainNode);
-      gainNode.connect(this.ctx.destination);
-      osc.start();
-      osc.stop(now + 0.35);
+      osc.frequency.setValueAtTime(1180, now);
+      osc.frequency.linearRampToValueAtTime(800, now + 0.22);
+      
+      const squealFilter = this.ctx.createBiquadFilter();
+      squealFilter.type = 'bandpass';
+      squealFilter.frequency.setValueAtTime(1350, now);
+      squealFilter.Q.setValueAtTime(5.5, now);
+      
+      const oscGain = this.ctx.createGain();
+      oscGain.gain.setValueAtTime(0, now);
+      oscGain.gain.linearRampToValueAtTime(0.045, now + 0.015);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+      
+      osc.connect(squealFilter);
+      squealFilter.connect(oscGain);
+      oscGain.connect(this.ctx.destination);
+      
+      noiseNode.start(now);
+      osc.start(now);
+      
+      noiseNode.stop(now + 0.25);
+      osc.stop(now + 0.25);
     } catch (e) {}
   },
 
@@ -278,112 +391,133 @@ export const AudioEngine = {
     this.bgmIsPlaying = true;
     this.bgmStep = 0;
 
-    let stepDuration = 0.115; // 130 BPM sixteenth note steps
-    let waveType: 'sine' | 'triangle' | 'sawtooth' | 'square' = 'sine';
-    let filterFreq = 950;
+    let stepDuration = 0.103; // ~145 BPM sixteenth notes
+    let waveType: 'sine' | 'triangle' | 'sawtooth' | 'square' = 'sawtooth';
+    let filterFreq = 1600;
     
-    // Default upbeat melody (Neon Sky Way)
+    // Default Map Track: Neon Sky Way (High energy Electronic/Trance style)
     let mNotes = [
-      440.00, 0, 440.00, 493.88, 523.25, 0, 523.25, 587.33, 
-      659.25, 0, 659.25, 587.33, 523.25, 493.88, 440.00, 0,
-      523.25, 0, 523.25, 587.33, 659.25, 0, 659.25, 698.46,
-      783.99, 0, 783.99, 698.46, 659.25, 587.33, 523.25, 0,
-      587.33, 0, 587.33, 659.25, 698.46, 0, 698.46, 783.99,
-      880.00, 0, 783.99, 0, 698.46, 0, 587.33, 0,
-      659.25, 0, 659.25, 698.46, 783.99, 0, 783.99, 880.00,
-      987.77, 880.00, 783.99, 698.46, 659.25, 587.33, 493.88, 0
+      329.63, 329.63, 392.00, 329.63, 440.00, 0, 440.00, 493.88,
+      523.25, 523.25, 587.33, 523.25, 493.88, 440.00, 392.00, 0,
+      329.63, 0, 392.00, 0, 440.00, 440.00, 523.25, 440.00,
+      587.33, 587.33, 659.25, 587.33, 523.25, 493.88, 392.00, 0,
+      329.63, 329.63, 392.00, 329.63, 440.00, 0, 440.00, 493.88,
+      523.25, 523.25, 587.33, 880.00, 783.99, 698.46, 587.33, 0,
+      659.25, 659.25, 698.46, 783.99, 880.00, 0, 880.00, 987.77,
+      1046.50, 987.77, 880.00, 783.99, 659.25, 587.33, 493.88, 0
     ];
 
     let bNotes = [
-      110.00, 110.00, 110.00, 110.00,
-      87.31, 87.31, 87.31, 87.31,
-      98.00, 98.00, 98.00, 98.00,
-      82.41, 82.41, 82.41, 82.41
+      82.41, 82.41, 110.00, 110.00,
+      98.00, 98.00, 87.31, 87.31,
+      82.41, 82.41, 98.00, 98.00,
+      110.00, 110.00, 123.47, 123.47
     ];
 
     if (mapId === 'cyberspace_tunnel') {
-      // Fast Cyber Techno (155 BPM)
-      stepDuration = 0.096;
-      waveType = 'triangle';
-      filterFreq = 1200;
+      // Fast, frantic tech-trance theme (BPM 160)
+      stepDuration = 0.093;
+      waveType = 'square'; // Aggressive digital pulse wave 
+      filterFreq = 1800;
       mNotes = [
-        261.63, 311.13, 392.00, 466.16, 523.25, 466.16, 392.00, 311.13,
-        293.66, 349.23, 440.00, 523.25, 587.33, 523.25, 440.00, 349.23,
-        261.63, 311.13, 392.00, 466.16, 523.25, 466.16, 392.00, 311.13,
-        349.23, 415.30, 523.25, 622.25, 698.46, 622.25, 523.25, 415.30,
-        261.63, 0, 392.00, 0, 523.25, 0, 466.16, 0,
-        293.66, 0, 440.00, 0, 587.33, 0, 523.25, 0,
-        261.63, 0, 392.00, 0, 523.25, 0, 466.16, 0,
-        349.23, 349.23, 415.30, 415.30, 523.25, 523.25, 622.25, 622.25
+        261.63, 261.63, 523.25, 311.13, 261.63, 523.25, 311.13, 261.63,
+        293.66, 293.66, 587.33, 349.23, 293.66, 587.33, 349.23, 293.66,
+        311.13, 311.13, 622.25, 392.00, 311.13, 622.25, 392.00, 311.13,
+        349.23, 349.23, 698.46, 415.30, 349.23, 698.46, 523.25, 415.30,
+        261.63, 523.25, 466.16, 392.00, 311.13, 392.00, 466.16, 523.25,
+        293.66, 587.33, 523.25, 440.00, 349.23, 440.00, 523.25, 587.33,
+        311.13, 622.25, 587.33, 493.88, 392.00, 493.88, 587.33, 622.25,
+        349.23, 698.46, 622.25, 523.25, 415.30, 523.25, 622.25, 698.46
       ];
       bNotes = [
         65.41, 65.41, 65.41, 65.41,
         73.42, 73.42, 73.42, 73.42,
-        65.41, 65.41, 65.41, 65.41,
+        78.41, 78.41, 78.41, 78.41,
         87.31, 87.31, 87.31, 87.31
       ];
     } else if (mapId === 'cosmic_highway') {
-      // Ethereal Space Trance (110 BPM)
-      stepDuration = 0.136;
-      waveType = 'sine';
-      filterFreq = 800;
+      // High-speed progressive cosmic trance (BPM 140)
+      stepDuration = 0.107;
+      waveType = 'sawtooth';
+      filterFreq = 1400;
       mNotes = [
-        587.33, 0, 659.25, 0, 783.99, 0, 880.00, 0,
-        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
-        587.33, 0, 659.25, 0, 783.99, 0, 1174.66, 0,
-        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
-        587.33, 587.33, 659.25, 659.25, 783.99, 783.99, 880.00, 880.00,
-        987.77, 987.77, 880.00, 880.00, 783.99, 783.99, 659.25, 659.25,
-        587.33, 587.33, 659.25, 659.25, 783.99, 783.99, 1174.66, 1174.66,
-        1318.51, 0, 1174.66, 0, 987.77, 0, 880.00, 0
+        440.00, 440.00, 880.00, 0, 493.88, 493.88, 987.77, 0,
+        523.25, 523.25, 1046.50, 0, 587.33, 587.33, 1174.66, 0,
+        659.25, 659.25, 1318.51, 0, 587.33, 587.33, 1174.66, 0,
+        523.25, 523.25, 1046.50, 0, 493.88, 493.88, 987.77, 0,
+        440.00, 0, 523.25, 0, 659.25, 0, 880.00, 0,
+        493.88, 0, 587.33, 0, 739.99, 0, 987.77, 0,
+        523.25, 0, 659.25, 0, 783.99, 0, 1046.50, 0,
+        587.33, 0, 698.46, 0, 880.00, 0, 1174.66, 0
       ];
       bNotes = [
-        73.42, 73.42, 82.41, 82.41,
-        98.00, 98.00, 82.41, 82.41,
-        73.42, 73.42, 82.41, 82.41,
-        110.00, 110.00, 98.00, 98.00
+        55.00, 55.00, 61.74, 61.74,
+        65.41, 65.41, 73.42, 73.42,
+        55.00, 55.00, 61.74, 61.74,
+        65.41, 65.41, 73.42, 73.42
       ];
     } else if (mapId === 'lava_crevice') {
-      // Intense Low-pass Churn Heavy Metal/Industrial Beat (138 BPM)
-      stepDuration = 0.108;
-      waveType = 'triangle';
-      filterFreq = 600;
+      // Aggressive Industrial Dark Hard-bass drive (BPM 150)
+      stepDuration = 0.100;
+      waveType = 'sawtooth';
+      filterFreq = 800; // Deep thudding filter 
       mNotes = [
-        146.83, 146.83, 0, 146.83, 164.81, 164.81, 0, 164.81,
-        174.61, 174.61, 0, 174.61, 196.00, 0, 220.00, 0,
-        146.83, 146.83, 0, 146.83, 164.81, 164.81, 0, 164.81,
-        261.63, 0, 246.94, 0, 220.00, 0, 196.00, 0,
-        146.83, 146.83, 146.83, 146.83, 164.81, 164.81, 164.81, 164.81,
-        174.61, 174.61, 174.61, 174.61, 220.00, 220.00, 220.00, 220.00,
-        146.83, 146.83, 146.83, 146.83, 164.81, 164.81, 164.81, 164.81,
-        293.66, 293.66, 261.63, 261.63, 220.00, 220.00, 196.00, 196.00
+        110.00, 0, 110.00, 110.00, 123.47, 0, 123.47, 123.47,
+        130.81, 0, 130.81, 130.81, 146.83, 146.83, 164.81, 164.81,
+        110.00, 110.00, 146.83, 110.00, 164.81, 110.00, 196.00, 110.00,
+        220.00, 0, 293.66, 0, 329.63, 0, 220.00, 0,
+        110.00, 0, 110.00, 110.00, 123.47, 0, 123.47, 123.47,
+        130.81, 0, 130.81, 130.81, 146.83, 146.83, 220.00, 0,
+        220.00, 220.00, 293.66, 220.00, 329.63, 220.00, 392.00, 220.00,
+        440.00, 440.00, 493.88, 493.88, 523.25, 523.25, 587.33, 0
       ];
       bNotes = [
-        73.42, 73.42, 73.42, 73.42,
-        82.41, 82.41, 82.41, 82.41,
-        87.31, 87.31, 87.31, 87.31,
-        98.00, 98.00, 110.00, 110.00
+        55.00, 55.00, 55.00, 55.00,
+        61.74, 61.74, 61.74, 61.74,
+        41.20, 41.20, 41.20, 41.20,
+        55.00, 55.00, 55.00, 55.00
       ];
     } else if (mapId === 'frozen_glacier') {
-      // Sweet Icy Bell Winter Chime (122 BPM)
-      stepDuration = 0.123;
-      waveType = 'sine';
-      filterFreq = 1605;
+      // Metallic Sharp Neo-Synthwave / Chiptune (BPM 145)
+      stepDuration = 0.103;
+      waveType = 'square';
+      filterFreq = 2200;
       mNotes = [
-        523.25, 587.33, 659.25, 783.99, 880.00, 0, 880.00, 0,
-        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
-        659.25, 698.46, 783.99, 880.00, 987.77, 0, 987.77, 0,
-        1046.50, 0, 987.77, 0, 880.00, 0, 783.99, 0,
-        523.25, 0, 659.25, 0, 880.00, 0, 783.99, 0,
-        987.77, 0, 880.00, 0, 783.99, 0, 659.25, 0,
-        659.25, 0, 783.99, 0, 987.77, 0, 880.00, 0,
-        1046.50, 1046.50, 987.77, 987.77, 880.00, 880.00, 783.99, 783.99
+        493.88, 587.33, 739.99, 987.77, 880.00, 0, 880.00, 0,
+        783.99, 0, 739.99, 0, 587.33, 0, 493.88, 0,
+        440.00, 523.25, 659.25, 880.00, 783.99, 0, 783.99, 0,
+        698.46, 0, 659.25, 0, 523.25, 0, 440.00, 0,
+        493.88, 739.99, 987.77, 1174.66, 1479.98, 0, 1479.98, 0,
+        1318.51, 1318.51, 1174.66, 1174.66, 987.77, 987.77, 739.99, 739.99,
+        880.00, 1046.50, 1318.51, 1760.00, 1567.98, 0, 1567.98, 0,
+        1396.91, 1396.91, 1318.51, 1318.51, 1046.50, 1046.50, 880.00, 880.00
       ];
       bNotes = [
-        65.41, 65.41, 78.41, 78.41,
-        87.31, 87.31, 98.00, 98.00,
-        65.41, 65.41, 78.41, 78.41,
-        110.00, 110.00, 98.00, 98.00
+        61.74, 61.74, 73.42, 73.42,
+        55.00, 55.00, 65.41, 65.41,
+        61.74, 61.74, 73.42, 73.42,
+        87.31, 87.31, 98.00, 98.00
+      ];
+    } else if (mapId === 'lobby') {
+      // Sleek Retro Electro Lobby (118 BPM)
+      stepDuration = 0.127;
+      waveType = 'sine';
+      filterFreq = 1100;
+      mNotes = [
+        392.00, 0, 440.00, 523.25, 587.33, 0, 523.25, 0,
+        349.23, 0, 392.00, 440.00, 493.88, 0, 440.00, 0,
+        329.63, 0, 392.00, 440.00, 523.25, 0, 392.00, 0,
+        440.00, 523.25, 587.33, 659.25, 783.99, 0, 0, 0,
+        392.00, 0, 440.00, 523.25, 587.33, 0, 523.25, 0,
+        349.23, 0, 392.00, 440.00, 493.88, 0, 440.00, 0,
+        329.63, 0, 392.00, 440.00, 523.25, 0, 392.00, 0,
+        440.00, 523.25, 587.33, 783.99, 880.00, 0, 0, 0
+      ];
+      bNotes = [
+        87.31, 87.31, 87.31, 87.31,
+        98.00, 98.00, 98.00, 98.00,
+        82.41, 82.41, 82.41, 82.41,
+        110.00, 110.00, 110.00, 110.00
       ];
     }
 
@@ -452,8 +586,10 @@ export const AudioEngine = {
         osc.frequency.setValueAtTime(100, time);
         osc.frequency.exponentialRampToValueAtTime(36, time + 0.08);
         
-        gain.gain.setValueAtTime(0.12, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+        // Remove click: start at 0 gain, ramp to peak in 3ms, fade smoothly
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.12, time + 0.003);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.1);
         
         osc.connect(gain);
         gain.connect(this.ctx.destination);
@@ -472,8 +608,10 @@ export const AudioEngine = {
         filter.frequency.value = 900;
         
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.03, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+        // Remove click: start at 0, ramp to peak in 3ms, fade smoothly
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.026, time + 0.003);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.12);
         
         source.connect(filter);
         filter.connect(gain);
@@ -490,11 +628,13 @@ export const AudioEngine = {
         source.buffer = noiseBuffer;
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'highpass';
-        filter.frequency.value = 8000;
+        filter.frequency.value = 10000; // Even higher frequency for a sleek, clean, non-intrusive sound
         
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.015, time);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.04);
+        // Eliminate the ticking artifact: make hi-hat extremely soft, start at 0, ramp to peak over 3ms, then decay
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.0025, time + 0.003); // Very soft whisper, completely non-annoying
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.04);
         
         source.connect(filter);
         filter.connect(gain);
@@ -594,6 +734,17 @@ export class GameEngine {
   shieldTimer = 0;
   aiProgress = 0;
   lastCrashTime = 0;
+
+  // AI item management
+  gameMode: string = 'speed';
+  aiShieldActive = false;
+  aiShieldTimer = 0;
+  aiHasItem = false;
+  aiHeldItem: string | null = null;
+  aiItemDecisionTimer = 0;
+  aiAutoItemTimer = 400; // Fallback timer to auto-grant items to AI to keep the race extremely engaging
+  onComicPopup?: (text: string, color: string) => void;
+  onHUDNotification?: (title: string, body: string) => void;
 
   itemBoxes: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; active: boolean; respawnTimer: number }> = [];
   obstacles: Array<{ mesh: THREE.Mesh; position: THREE.Vector3 }> = [];
@@ -870,27 +1021,34 @@ export class GameEngine {
     for (let i = 0; i < totalBoxes; i++) {
       const t = (i + 0.5) / totalBoxes;
       const point = this.trackSpline.getPointAt(t);
+      const tangent = this.trackSpline.getTangentAt(t).normalize();
+      const lateralDir = tangent.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
 
-      const boxMat = new THREE.MeshStandardMaterial({
-        color: 0xfacc15,
-        transparent: true,
-        opacity: 0.9,
-        metalness: 0.9,
-        roughness: 0.1,
-        emissive: 0xfacc15,
-        emissiveIntensity: 0.6
-      });
+      // Spawn two boxes side-by-side at each milestone
+      const divisions = [-2.8, 2.8];
+      divisions.forEach(offset => {
+        const boxMat = new THREE.MeshStandardMaterial({
+          color: 0xfacc15,
+          transparent: true,
+          opacity: 0.9,
+          metalness: 0.9,
+          roughness: 0.1,
+          emissive: 0xfacc15,
+          emissiveIntensity: 0.6
+        });
 
-      const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), boxMat);
-      boxMesh.position.copy(point);
-      boxMesh.position.y += 2.0;
+        const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), boxMat);
+        const spawnPos = point.clone().addScaledVector(lateralDir, offset);
+        boxMesh.position.copy(spawnPos);
+        boxMesh.position.y += 2.0;
 
-      this.scene.add(boxMesh);
-      this.itemBoxes.push({
-        mesh: boxMesh,
-        basePos: boxMesh.position.clone(),
-        active: true,
-        respawnTimer: 0
+        this.scene.add(boxMesh);
+        this.itemBoxes.push({
+          mesh: boxMesh,
+          basePos: boxMesh.position.clone(),
+          active: true,
+          respawnTimer: 0
+        });
       });
     }
   }
@@ -969,6 +1127,43 @@ export class GameEngine {
       initialScale: new THREE.Vector3(0.35, 1.5, 0.35),
       life: 1.0,
       decay: 0.1
+    };
+    
+    this.scene.add(p);
+    this.particleGroup.push(p);
+  }
+
+  createSpeedLineParticle(position: THREE.Vector3, speedHeading: THREE.Vector3, colorHex = 0xffffff) {
+    if (this.particleGroup.length > 120) {
+      const oldest = this.particleGroup.shift();
+      if (oldest) {
+        this.scene.remove(oldest);
+        if (oldest.material) {
+          (oldest.material as THREE.Material).dispose();
+        }
+      }
+    }
+
+    const pMat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.8
+    });
+    
+    const p = new THREE.Mesh(this.boosterGeometry, pMat);
+    p.position.copy(position);
+    p.scale.set(0.04, 3.5, 0.04);
+    
+    const targetLookAt = p.position.clone().add(speedHeading);
+    if (p.position.distanceToSquared(targetLookAt) > 0.0001) {
+      p.lookAt(targetLookAt);
+    }
+    
+    p.userData = {
+      vel: speedHeading.clone().multiplyScalar(1.2),
+      initialScale: new THREE.Vector3(0.04, 3.5, 0.04),
+      life: 1.0,
+      decay: 0.12
     };
     
     this.scene.add(p);
@@ -1072,9 +1267,121 @@ export class GameEngine {
   }
 
   triggerAICrash() {
+    if (this.aiShieldActive) {
+      this.aiShieldActive = false;
+      this.onComicPopup?.('AI BLOCK!', '#3b82f6');
+      this.onHUDNotification?.('AI 실드 방어!', 'AI가 일렉트로 실드로 발사된 미사일을 방어했습니다.');
+      return;
+    }
     AudioEngine.playCrash();
     this.aiKart.mesh.userData.spinTimer = 60;
     this.onAiCrashNotification();
+  }
+
+  triggerAIItemAcquisition() {
+    if (this.aiHasItem) return;
+    const itemList = ['booster', 'shield', 'banana', 'missile'];
+    this.aiHeldItem = itemList[Math.floor(Math.random() * itemList.length)];
+    this.aiHasItem = true;
+    this.aiItemDecisionTimer = 40 + Math.floor(Math.random() * 80); // 40-120 frames (~1-2 seconds)
+  }
+
+  useAIItem() {
+    if (!this.aiHasItem || !this.aiHeldItem) return;
+    const item = this.aiHeldItem;
+    this.aiHasItem = false;
+    this.aiHeldItem = null;
+
+    if (item === 'booster') {
+      this.aiBoosterActive = true;
+      this.aiBoosterTimer = 110;
+      this.onComicPopup?.('AI BOOST', '#22d3ee');
+    } else if (item === 'shield') {
+      this.aiShieldActive = true;
+      this.aiShieldTimer = 220; // ~3.5 seconds
+      this.onComicPopup?.('AI SHIELD', '#3b82f6');
+      this.onHUDNotification?.('AI 실드 전개!', 'AI가 일렉트로 실드를 사용해 무적 방어 장벽을 유지 중입니다!');
+    } else if (item === 'banana') {
+      this.dropBananaAI();
+    } else if (item === 'missile') {
+      this.shootMissileAI();
+    }
+  }
+
+  dropBananaAI() {
+    if (!this.aiKart || !this.aiKart.mesh) return;
+    const aiPos = this.aiKart.mesh.position;
+    const heading = new THREE.Vector3(Math.sin(this.aiKart.mesh.rotation.y), 0, Math.cos(this.aiKart.mesh.rotation.y));
+    const dropPos = aiPos.clone().sub(heading.multiplyScalar(4.0));
+
+    const banGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.3, 8);
+    const banMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      emissive: 0xfacc15,
+      emissiveIntensity: 0.6
+    });
+    const banana = new THREE.Mesh(banGeo, banMat);
+    banana.position.copy(dropPos);
+    banana.position.y += 0.1;
+
+    this.scene.add(banana);
+    this.obstacles.push({
+      mesh: banana,
+      position: banana.position.clone()
+    });
+
+    this.onComicPopup?.('AI TRAP!', '#eab308');
+    this.onHUDNotification?.('AI 바나나 매설!', 'AI가 바나나 트랙을 후방에 매설했습니다! 피하십시오!');
+  }
+
+  shootMissileAI() {
+    if (!this.aiKart || !this.aiKart.mesh || !this.playerKart || !this.playerKart.mesh) return;
+    
+    this.onComicPopup?.('AI MISSILE!', '#f43f5e');
+    this.onHUDNotification?.('AI 미사일 록온 배수!', 'AI가 유도 미사일을 발사했습니다! 실드로 격벽 방어하거나 피격 차선을 피하십시오!');
+
+    const missile = new THREE.Mesh(
+      new THREE.ConeGeometry(0.5, 1.8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x3b82f6 }) // Blue missile representing AI launch
+    );
+    missile.geometry.rotateX(Math.PI / 2);
+    missile.position.copy(this.aiKart.mesh.position);
+    this.scene.add(missile);
+
+    let progress = 0;
+    const launchInterval = setInterval(() => {
+      // Guard: prevent background thread leaks if engine is torn down
+      if (!this.active || !this.playerKart || !this.playerKart.mesh || !this.aiKart || !this.aiKart.mesh) {
+        clearInterval(launchInterval);
+        try { this.scene.remove(missile); } catch (e) {}
+        return;
+      }
+
+      progress += 0.055;
+      missile.position.lerp(this.playerKart.mesh.position, progress);
+      this.createSmokeParticle(missile.position, 0x3b82f6, 0.4);
+
+      if (progress >= 1.0) {
+        clearInterval(launchInterval);
+        this.scene.remove(missile);
+        this.triggerPlayerCrashByAI();
+      }
+    }, 50);
+  }
+
+  triggerPlayerCrashByAI() {
+    if (this.shieldActive) {
+      this.shieldActive = false;
+      this.onComicPopup?.('BLOCK!', '#3b82f6');
+      this.onHUDNotification?.('방어 성공!', '일렉트로 실드로 AI의 유도 미사일을 요격 격침시켰습니다!');
+      return;
+    }
+
+    this.playerKart.mesh.userData.spinTimer = 50;
+    AudioEngine.playCrash();
+    this.onPlayerCrashNotification();
+    this.onComicPopup?.('CRASH!', '#ef4444');
+    this.onHUDNotification?.('미사일 피격!', 'AI 미사일 공격에 정통으로 맞아 차체가 탈선했습니다.');
   }
 
   dropBanana() {
@@ -1126,6 +1433,18 @@ export class GameEngine {
       const headingVec = new THREE.Vector3(Math.sin(this.angle), 0, Math.cos(this.angle));
       this.createBoosterFlame(sprayPos, headingVec, true);
 
+      // Hyperactive booster warp streaks
+      for (let s = 0; s < 2; s++) {
+        const backVec = new THREE.Vector3(-Math.sin(this.angle), 0, -Math.cos(this.angle));
+        const offsetAhead = new THREE.Vector3(
+          (Math.random() - 0.5) * 12,
+          (Math.random() * 4) + 0.1,
+          (Math.random() - 0.5) * 12
+        ).addScaledVector(backVec, -6);
+        const spawnPos = this.playerKart.mesh.position.clone().add(offsetAhead);
+        this.createSpeedLineParticle(spawnPos, backVec, 0xe0f7fa);
+      }
+
       if (this.boosterTimer <= 0) {
         this.boosterActive = false;
       }
@@ -1172,6 +1491,18 @@ export class GameEngine {
       const tyreOffset = new THREE.Vector3(-1.3, 0.1, -1.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
       const driftTirePos = this.playerKart.mesh.position.clone().add(tyreOffset);
       this.createSmokeParticle(driftTirePos, 0xff007f, 0.45);
+
+      // Wind speed line particles for premium drift feel
+      if (Math.random() < 0.35) {
+        const offset = new THREE.Vector3(
+          (Math.random() - 0.5) * 6,
+          (Math.random() * 2) + 0.2,
+          (Math.random() - 0.5) * 6
+        );
+        const spawnPos = this.playerKart.mesh.position.clone().add(offset);
+        const backVec = new THREE.Vector3(-Math.sin(this.angle), 0, -Math.cos(this.angle));
+        this.createSpeedLineParticle(spawnPos, backVec, Math.random() > 0.5 ? 0xff007f : 0x06b6d4);
+      }
 
       // Charge Gauge
       this.boosterGauge += ((this.isSuperNitro ? 5.5 : 1.0) * driftStatsWeight); // stats.drift influence
@@ -1267,6 +1598,41 @@ export class GameEngine {
       return;
     } else {
       this.aiKart.mesh.visible = true;
+    }
+
+    // Decay AI shield timer and emit visual aura particles
+    if (this.aiShieldActive) {
+      this.aiShieldTimer--;
+      if (this.aiShieldTimer <= 0) {
+        this.aiShieldActive = false;
+      }
+      if (this.aiShieldTimer % 3 === 0) {
+        const offset = new THREE.Vector3(
+          (Math.random() - 0.5) * 1.6,
+          (Math.random() * 0.9),
+          (Math.random() - 0.5) * 1.6
+        );
+        const shieldSparkPos = this.aiKart.mesh.position.clone().add(offset);
+        this.createSmokeParticle(shieldSparkPos, 0x3b82f6, 0.38); // Glowing cyan-blue spark tracking shield status
+      }
+    }
+
+    if (this.gameMode === 'item') {
+      // 1. If AI is holding an item, count down and decide when to activate or launch it!
+      if (this.aiHasItem) {
+        this.aiItemDecisionTimer--;
+        if (this.aiItemDecisionTimer <= 0) {
+          this.useAIItem();
+        }
+      } else {
+        // 2. Continuous fallback timer so AI automatically gets items every ~7 seconds
+        // This keeps the race incredibly active and engaging even if the bot is lagging behind
+        this.aiAutoItemTimer--;
+        if (this.aiAutoItemTimer <= 0) {
+          this.triggerAIItemAcquisition();
+          this.aiAutoItemTimer = 420; // reset to 7 seconds
+        }
+      }
     }
 
     if (this.aiKart.mesh.userData.spinTimer > 0) {
@@ -1450,6 +1816,16 @@ export class GameEngine {
         box.mesh.visible = false;
         box.respawnTimer = 300;
         this.onItemPickup();
+      }
+
+      // AI item box acquisition (only in item mode)
+      if (this.gameMode === 'item' && box.active && this.aiKart && this.aiKart.mesh) {
+        if (this.aiKart.mesh.position.distanceTo(box.mesh.position) < 3.2) {
+          box.active = false;
+          box.mesh.visible = false;
+          box.respawnTimer = 300;
+          this.triggerAIItemAcquisition();
+        }
       }
 
       if (box.active) {

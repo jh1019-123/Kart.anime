@@ -18,7 +18,7 @@ export interface MapInfo {
   id: string;
   name: string;
   description: string;
-  difficulty: '★☆☆' | '★★☆' | '★★★';
+  difficulty: string;
   themeColor: string; // Tailwind 테마 색상 (예: pink-500, cyan-400 등)
   skyColor: number; // Fog / Background 색상 (Hex)
   points: [number, number, number][]; // 3D 경로 좌표들

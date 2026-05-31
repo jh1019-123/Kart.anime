@@ -106,7 +106,7 @@ export const MAPS: MapInfo[] = [
     id: 'cyberspace_tunnel',
     name: '사이스페이스 터널 (Cyberspace Tunnel)',
     description: '연속적인 지그재그 헤어핀과 일직선 광속 가속 구간이 어우러진 미래형 테크노 가상터널 맵.',
-    difficulty: '★★☆',
+    difficulty: '어려움',
     themeColor: 'cyan-400',
     skyColor: 0x05131a, // Dark cyan gray
     points: [
@@ -157,7 +157,7 @@ export const MAPS: MapInfo[] = [
     id: 'lava_crevice',
     name: '마그마 크레비스 (Magma Crevice)',
     description: '끓어오르는 빨간 용암 계곡 사이로 설계된 위험천만한 코스. 급정거와 빠른 부스터 드리프트가 중요합니다.',
-    difficulty: '★★★',
+    difficulty: '중',
     themeColor: 'red-500',
     skyColor: 0x1a0505, // Fiery dark red
     points: [

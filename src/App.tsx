@@ -25,7 +25,10 @@ import {
   Copy,
   Check,
   MapPin,
-  Keyboard
+  Keyboard,
+  Music,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 import { KARTS, MAPS } from './data';
 import { KartInfo, MapInfo, Participant, RaceOutcome } from './types';
@@ -73,7 +76,7 @@ export default function App() {
 
   // --- UI Layout & Navigation States ---
   // Reorganized lobby as unified full-width tabs
-  const [activeMenuTab, setActiveMenuTab] = useState<'garage' | 'maps' | 'modes' | 'gacha' | 'multiplayer' | 'guide'>('garage');
+  const [activeMenuTab, setActiveMenuTab] = useState<'garage' | 'maps' | 'modes' | 'gacha' | 'multiplayer' | 'guide' | null>(null);
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'finished'>('lobby');
   const [gameMode, setGameMode] = useState<'speed' | 'item' | 'time_attack' | 'ten_laps' | 'super_nitro'>('speed');
   const [leaderboard, setLeaderboard] = useState<Array<{
@@ -98,6 +101,9 @@ export default function App() {
   const [gameTimeFormatted, setGameTimeFormatted] = useState<string>('00:00.00');
   const [rivalProgress, setRivalProgress] = useState<number>(0);
   const [playerProgress, setPlayerProgress] = useState<number>(0);
+  const [controlMode, setControlMode] = useState<'keyboard' | 'mobile' | null>(() => {
+    return localStorage.getItem('kart_control_mode') as 'keyboard' | 'mobile' | null;
+  });
 
   // --- Real-Time P2P Network states ---
   const [netRole, setNetRole] = useState<'host' | 'client' | null>(null);
@@ -124,6 +130,7 @@ export default function App() {
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [drawnKart, setDrawnKart] = useState<KartInfo | null>(null);
   const [drawRefund, setDrawRefund] = useState<boolean>(false);
+  const [lobbyBgmPlaying, setLobbyBgmPlaying] = useState<boolean>(true);
   const [gachaIntervalText, setGachaIntervalText] = useState<string>('???');
   const [filterMap, setFilterMap] = useState<string>('All');
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
@@ -325,11 +332,17 @@ export default function App() {
       keysPressedRef.current[e.key] = false;
     };
 
+    const handleBlur = () => {
+      keysPressedRef.current = {};
+    };
+
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [gameState, activeItem, boosterStock, gameMode, isMultiplayerActive]);
 
@@ -348,13 +361,17 @@ export default function App() {
   useEffect(() => {
     if (gameState === 'playing' || gameState === 'countdown') {
       AudioEngine.playBGM(selectedMapId);
+    } else if (gameState === 'lobby' && lobbyBgmPlaying) {
+      // Force stop first to prevent duplicate play sequences
+      AudioEngine.stopBGM();
+      AudioEngine.playBGM('lobby');
     } else {
       AudioEngine.stopBGM();
     }
     return () => {
       AudioEngine.stopBGM();
     };
-  }, [gameState, selectedMapId]);
+  }, [gameState, selectedMapId, lobbyBgmPlaying]);
 
   // In-Game 60 FPS Loop
   useEffect(() => {
@@ -454,6 +471,7 @@ export default function App() {
   // --- Start Racing Sequencer ---
   const launchRace = (forceStart = false) => {
     triggerAudioInit();
+    keysPressedRef.current = {};
     
     if (netRole === 'host' && !forceStart) {
       if (netManagerRef.current) {
@@ -535,6 +553,13 @@ export default function App() {
           }
 
           engineRef.current.isSuperNitro = gameMode === 'super_nitro';
+          engineRef.current.gameMode = gameMode;
+          engineRef.current.onComicPopup = (text: string, color: string) => {
+            triggerComicTextPop(text, color);
+          };
+          engineRef.current.onHUDNotification = (title: string, body: string) => {
+            showHUDNotification(title, body);
+          };
           engineRef.current.activateEngine();
           
           if (AudioEngine.ctx) {
@@ -688,6 +713,7 @@ export default function App() {
 
   const quitRace = () => {
     triggerAudioInit();
+    keysPressedRef.current = {};
     if (engineRef.current) {
       engineRef.current.cleanup();
       engineRef.current = null;
@@ -760,6 +786,74 @@ export default function App() {
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#030408] text-white">
+      {/* Control Selection Modal for first-time or forced startup selection */}
+      {controlMode === null && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/95 backdrop-blur-md p-4 text-white font-sans select-none pointer-events-auto">
+          <div className="relative max-w-lg w-full bg-slate-900 border-2 border-cyan-500/80 rounded-3xl p-6 md:p-8 shadow-2xl text-center flex flex-col items-center">
+            
+            {/* Floating neon badge */}
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-cyan-400 to-blue-500 flex items-center justify-center text-white text-3xl font-bold shadow-xl animate-bounce mb-4">
+              🏎️
+            </div>
+
+            <h2 className="text-2xl md:text-3xl font-black tracking-tight text-yellow-300 uppercase italic">
+              KART-RIDER ANIME
+            </h2>
+            <p className="text-cyan-400 text-xs font-black tracking-widest mt-1 mb-6">
+              조작 형태 선택 (CHOOSE CONTROL MODE)
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full mb-8">
+              {/* Keyboard Mode Choice button */}
+              <button
+                onClick={() => {
+                  triggerAudioInit();
+                  localStorage.setItem('kart_control_mode', 'keyboard');
+                  setControlMode('keyboard');
+                  showHUDNotification('PC 키보드 모드 설정', 'Arrow / WASD 키로 드리프트 레이싱을 진행할 수 있습니다.');
+                }}
+                className="bg-slate-950 hover:bg-slate-850 p-5 rounded-2xl border-2 border-slate-800 hover:border-pink-500 transition-all flex flex-col items-center text-center cursor-pointer group hover:scale-[1.02]"
+              >
+                <div className="w-12 h-12 rounded-xl bg-pink-500/10 text-pink-400 flex items-center justify-center mb-3 group-hover:bg-pink-500 group-hover:text-slate-950 transition-colors">
+                  <span className="text-xl font-bold">⌨️</span>
+                </div>
+                <div className="text-sm font-black text-white group-hover:text-pink-400 transition-colors">PC 키보드 모드</div>
+                <div className="text-[10.5px] text-gray-400 font-medium leading-relaxed mt-2.5">
+                  방향키 / WASD 주행<br />
+                  <b>Shift</b> 키 드리프트<br />
+                  <b>Space / Ctrl</b> 아이템 사용
+                </div>
+              </button>
+
+              {/* Mobile Mode Choice button */}
+              <button
+                onClick={() => {
+                  triggerAudioInit();
+                  localStorage.setItem('kart_control_mode', 'mobile');
+                  setControlMode('mobile');
+                  showHUDNotification('모바일 터치 모드 설정', '화면 가상 컨트롤 버튼으로 즉각 조향 및 드리프트가 가능합니다.');
+                }}
+                className="bg-slate-950 hover:bg-slate-850 p-5 rounded-2xl border-2 border-slate-800 hover:border-cyan-500 transition-all flex flex-col items-center text-center cursor-pointer group hover:scale-[1.02]"
+              >
+                <div className="w-12 h-12 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center mb-3 group-hover:bg-cyan-500 group-hover:text-slate-950 transition-colors">
+                  <span className="text-xl font-bold">📱</span>
+                </div>
+                <div className="text-sm font-black text-white group-hover:text-cyan-400 transition-colors">모바일 터치 모드</div>
+                <div className="text-[10.5px] text-gray-400 font-medium leading-relaxed mt-2.5">
+                  가상 방향 리모컨 주행<br />
+                  가상 <b>DRIFT</b> 코너 공략<br />
+                  가상 <b>ITEM / BOOST</b> 탭사격
+                </div>
+              </button>
+            </div>
+
+            <p className="text-[9.5px] text-gray-500 font-bold max-w-xs leading-normal">
+              ※ 대합실 화면 우측 상단의 🎮 설정 아이콘을 클릭하여 언제든지 PC/모바일 조작 모드를 전환하실 수 있습니다.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Anime adrenaline Speed Line visual backdrop */}
       <AnimatePresence>
         {gameState === 'playing' && speedVal > 115 && (
@@ -778,136 +872,519 @@ export default function App() {
 
       {/* --- MAIN LOBBY NAVIGATION CONTROL PANEL --- */}
       {gameState === 'lobby' && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-between bg-gradient-to-br from-[#e0f2fe] via-[#bae6fd] to-[#f0f9ff] px-4 md:px-8 py-4 overflow-y-auto">
-          {/* Subtle anime comic pattern background & floating white clouds */}
-          <div className="absolute inset-x-0 top-0 bottom-0 overflow-hidden pointer-events-none opacity-40">
-            <div className="absolute top-[8%] left-[12%] w-64 h-16 bg-white/80 rounded-full filter blur-md animate-pulse" style={{ animationDuration: '8s' }} />
-            <div className="absolute top-[28%] right-[10%] w-80 h-20 bg-white/70 rounded-full filter blur-lg animate-pulse" style={{ animationDuration: '14s' }} />
-            <div className="absolute bottom-[22%] left-[30%] w-[420px] h-24 bg-white/60 rounded-full filter blur-md animate-pulse" style={{ animationDuration: '18s' }} />
+        <div className="absolute inset-0 z-50 flex flex-col justify-between bg-gradient-to-b from-[#020617] via-[#090d1f] to-[#020617] px-4 md:px-8 py-4 overflow-y-auto normal-scrollbar select-none">
+          {/* Cybernetic High-Tech Racing Background with multiple natural parallax elements */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {/* Perspective wireframe grid */}
+            <div 
+              className="absolute inset-0 opacity-20" 
+              style={{ 
+                backgroundImage: 'radial-gradient(circle at center, transparent 30%, rgba(2, 6, 23, 0.95) 100%), linear-gradient(0deg, transparent 24%, rgba(6, 182, 212, 0.15) 25%, rgba(6, 182, 212, 0.15) 26%, transparent 27%, transparent 74%, rgba(6, 182, 212, 0.15) 75%, rgba(6, 182, 212, 0.15) 76%, transparent 77%), linear-gradient(90deg, transparent 24%, rgba(6, 182, 212, 0.15) 25%, rgba(6, 182, 212, 0.15) 26%, transparent 27%, transparent 74%, rgba(6, 182, 212, 0.15) 75%, rgba(6, 182, 212, 0.15) 76%, transparent 77%)', 
+                backgroundSize: '48px 48px' 
+              }}
+            />
+            
+            {/* Glowing neon ambient orbs floating/glowing dynamically */}
+            <div className="absolute top-[12%] left-[15%] w-96 h-96 rounded-full bg-pink-500/10 filter blur-[90px] animate-pulse" style={{ animationDuration: '6s' }} />
+            <div className="absolute bottom-[10%] right-[10%] w-[450px] h-[450px] rounded-full bg-cyan-500/10 filter blur-[110px] animate-pulse" style={{ animationDuration: '9s' }} />
+            <div className="absolute top-[40%] left-[50%] -translate-x-1/2 w-[600px] h-32 rounded-full bg-blue-600/5 filter blur-[70px] animate-pulse" style={{ animationDuration: '12s' }} />
+
+            {/* Racetrack diagonal speed vectors / warm glowing stripes */}
+            <div className="absolute bottom-[-150px] left-[-100px] w-[500px] h-[300px] bg-gradient-to-tr from-yellow-500/10 to-transparent skew-x-[-30deg] border-r-4 border-yellow-500/20" />
+            <div className="absolute top-[-50px] right-[-100px] w-[600px] h-[250px] bg-gradient-to-bl from-pink-500/10 to-transparent skew-x-[-30deg] border-l-4 border-pink-500/20" />
+
+            {/* Matrix dotted tech grid */}
+            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, #0891b2 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+
+            {/* Circuit line accents to depict racing paths */}
+            <svg className="absolute inset-0 w-full h-full opacity-15" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="circGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#ec4899" stopOpacity="0.2" />
+                  <stop offset="50%" stopColor="#06b6d4" stopOpacity="0.5" />
+                  <stop offset="100%" stopColor="#ec4899" stopOpacity="0.1" />
+                </linearGradient>
+              </defs>
+              <path d="M -100 200 L 400 200 L 600 400 L 1200 400 L 1400 200 L 2000 200" fill="none" stroke="url(#circGrad)" strokeWidth="2" strokeDasharray="10 15" />
+              <path d="M -100 500 L 300 500 L 500 700 L 1500 700 L 1700 500 L 2000 500" fill="none" stroke="url(#circGrad)" strokeWidth="1.5" strokeDasharray="5 10" />
+            </svg>
           </div>
-          <div className="absolute inset-0 opacity-15 pointer-events-none" style={{ backgroundImage: 'radial-gradient(circle, #0284c7 1.5px, transparent 1.5px)', backgroundSize: '24px 24px' }}></div>
           
           {/* TOP HEADER STATUS ROW */}
-          <div className="flex flex-col md:flex-row justify-between items-center w-full max-w-7xl mx-auto gap-4 z-10 py-2 border-b border-slate-800">
-            <div className="text-center md:text-left transform -rotate-1">
-              <h1 className="text-3xl md:text-4.5xl font-black italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-pink-500 via-yellow-400 to-cyan-400 font-display comic-text">
-                KART-RIDER <span className="text-yellow-400 font-black">ANIME</span>
+          <div className="flex flex-col md:flex-row justify-between items-center w-full max-w-7xl mx-auto gap-4 z-10 py-3 border-b border-slate-800/80">
+            {/* Left helper badge */}
+            <div className="hidden md:flex items-center space-x-2 text-[10px] font-black tracking-widest text-cyan-400 font-mono">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse border border-emerald-500/50" />
+              <span>TOURNAMENT SERVER: ONLINE</span>
+            </div>
+
+            {/* Title in the Top Center */}
+            <div className="text-center transform -rotate-1 flex-1">
+              <h1 className="text-3xl md:text-5xl font-black italic tracking-wider text-yellow-300 drop-shadow-[0_3px_12px_rgba(234,179,8,0.7)] font-display uppercase font-extrabold flex items-center justify-center">
+                KART-RIDER <span className="text-white drop-shadow-[0_0_8px_rgba(6,182,212,0.9)] ml-2">ANIME</span>
               </h1>
-              <p className="text-cyan-405 text-cyan-400 text-[10px] font-black uppercase tracking-widest mt-0.5">
+              <p className="text-cyan-450 text-cyan-400 text-[10px] font-black uppercase tracking-widest mt-1">
                 ⚡ 초고속 실시간 멀티플레이어 레이싱 ⚡
               </p>
             </div>
 
-            {/* User nickname card & Gold displays */}
-            <div className="flex items-center space-x-3 bg-slate-900/90 border-2 border-slate-705 p-2 rounded-2xl shadow-lg">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white font-bold shadow-md">
-                <Trophy size={15} />
+            {/* User nickname card & Gold displays & Control Mode Trigger */}
+            <div className="flex flex-wrap items-center gap-3 justify-center">
+              {/* BGM Controller Button */}
+              <button
+                onClick={() => {
+                  triggerAudioInit();
+                  const nextState = !lobbyBgmPlaying;
+                  setLobbyBgmPlaying(nextState);
+                  if (nextState) {
+                    showHUDNotification('BGM 배경음악 재생', '세련된 오리지널 로비 BGM을 연주합니다.');
+                  } else {
+                    showHUDNotification('BGM 배경음악 음소거', '배경음악을 일시정지 하였습니다.');
+                  }
+                }}
+                className={`px-3 py-1.5 shadow-md border rounded-xl hover:border-pink-500 transition-all text-[10.5px] font-black cursor-pointer flex items-center space-x-1.5 ${
+                  lobbyBgmPlaying 
+                    ? 'bg-slate-900 border-pink-500/40 text-pink-400' 
+                    : 'bg-slate-950 border-slate-800 text-gray-500'
+                }`}
+                title="배경음악 재생/정지"
+              >
+                {lobbyBgmPlaying ? (
+                  <>
+                    <Volume2 size={13} className="text-pink-500 animate-bounce" />
+                    <span className="uppercase text-white font-mono flex items-center gap-1">
+                      BGM ON
+                      <span className="flex space-x-0.5 items-end h-2.5">
+                        <span className="w-0.5 h-1 bg-pink-500 animate-pulse block rounded-full" style={{ animationDelay: '0.1s' }} />
+                        <span className="w-0.5 h-2.5 bg-pink-500 animate-pulse block rounded-full" style={{ animationDelay: '0.3s' }} />
+                        <span className="w-0.5 h-1.5 bg-pink-500 animate-pulse block rounded-full" style={{ animationDelay: '0.5s' }} />
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <VolumeX size={13} />
+                    <span className="uppercase font-mono">BGM OFF</span>
+                  </>
+                )}
+              </button>
+
+              <button 
+                onClick={() => {
+                  triggerAudioInit();
+                  const next = controlMode === 'keyboard' ? 'mobile' : 'keyboard';
+                  localStorage.setItem('kart_control_mode', next);
+                  setControlMode(next);
+                  showHUDNotification('조작 모드 전환', next === 'keyboard' ? 'PC 키보드 (WASD/방향키)로 제어합니다.' : '모바일용 가상 컨트롤 패드가 화면에 작동합니다.');
+                }}
+                className="px-3 py-1.5 bg-slate-900 shadow-md border border-slate-800 rounded-xl hover:border-pink-500 transition-colors text-[10.5px] font-black cursor-pointer text-cyan-400 flex items-center space-x-1.5"
+                title="조작 방식 원클릭 변경"
+              >
+                <span>{controlMode === 'keyboard' ? '⌨️' : '📱'}</span>
+                <span className="uppercase text-white font-mono">{controlMode === 'keyboard' ? 'PC 키보드 모드' : '모바일 터치 모드'}</span>
+              </button>
+
+              <div className="flex items-center space-x-3 bg-slate-900/90 border-2 border-slate-800 p-2 rounded-2xl shadow-lg">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white font-bold shadow-md">
+                  <Trophy size={15} />
+                </div>
+                <div className="text-left font-mono">
+                  <div className="text-[10px] text-gray-400 font-bold uppercase flex items-center">
+                    <User size={10} className="mr-1 text-pink-500" />
+                    <input 
+                      type="text" 
+                      value={playerNameInput}
+                      onChange={(e) => setPlayerNameInput(e.target.value)}
+                      className="bg-transparent text-white outline-none border-b border-dashed border-pink-500/40 focus:border-pink-500 font-semibold py-0.5 text-xs w-28"
+                      placeholder="라이더 이름"
+                    />
+                  </div>
+                  <div className="flex items-center text-yellow-400 font-black text-sm">
+                    <Coins className="mr-1 text-yellow-400" size={13} />
+                    <span>{gold} Gold</span>
+                  </div>
+                </div>
               </div>
-              <div className="text-left font-mono">
-                <div className="text-[10px] text-gray-400 font-bold uppercase flex items-center">
-                  <User size={10} className="mr-1 text-pink-500" />
-                  <input 
-                    type="text" 
-                    value={playerNameInput}
-                    onChange={(e) => setPlayerNameInput(e.target.value)}
-                    className="bg-transparent text-white outline-none border-b border-dashed border-pink-500/40 focus:border-pink-500 font-semibold py-0.5 text-xs w-32"
-                    placeholder="라이더 이름"
+            </div>
+          </div>
+
+          {/* --- THE 3-COLUMN LOBBY DASHBOARD LAYER --- */}
+          <div className="w-full max-w-7xl mx-auto flex-1 z-10 my-4 flex flex-col justify-stretch">
+            <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch flex-1 min-h-[350px]">
+              
+              {/* === LEFT COLUMN: MAIN MENU SYSTEMS (Column span: 3) === */}
+              <div className="lg:col-span-3 flex flex-col justify-between gap-4">
+                <div className="flex flex-col gap-3.5">
+                  <div className="text-[10px] font-black uppercase text-pink-400 tracking-widest border-b border-pink-500/10 pb-1.5 flex items-center font-mono">
+                    <span className="w-1.5 h-1.5 bg-pink-500 rounded-full animate-ping mr-1.5" />
+                    <span>🎮 LOBBY OPERATIONS (대기실 로비 메뉴)</span>
+                  </div>
+
+                  {/* Button 1: Gacha Draw */}
+                  <button
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab('gacha'); }}
+                    className="group relative w-full p-4.5 p-4 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-800 hover:border-yellow-400 transition-all cursor-pointer flex items-center space-x-3.5 shadow-lg hover:scale-[1.02] text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-yellow-400/10 text-yellow-400 flex items-center justify-center text-2xl shadow border border-yellow-500/20 group-hover:scale-110 transition-transform">
+                      🎰
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-yellow-500 font-extrabold uppercase tracking-wide">CAPSULE DRAW</div>
+                      <div className="text-white text-xs font-black">행운의 카트 뽑기</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium leading-none mt-1">100G 소모 가차 상점</div>
+                    </div>
+                  </button>
+
+                  {/* Button 2: Map selector */}
+                  <button
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab('maps'); }}
+                    className="group relative w-full p-4.5 p-4 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-800 hover:border-cyan-405 hover:border-cyan-400 transition-all cursor-pointer flex items-center space-x-3.5 shadow-lg hover:scale-[1.02] text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-cyan-400/10 text-cyan-455 text-cyan-400 flex items-center justify-center text-2xl shadow border border-cyan-500/20 group-hover:scale-110 transition-transform">
+                      🗺️
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-cyan-400 font-extrabold uppercase tracking-wide">CHOOSE TRACK</div>
+                      <div className="text-white text-xs font-black">레이싱 트랙 맵 선택</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium leading-none mt-1">5종의 3D 서킷 트랙</div>
+                    </div>
+                  </button>
+
+                  {/* Button 3: Match Modes */}
+                  <button
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab('modes'); }}
+                    className="group relative w-full p-4.5 p-4 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-800 hover:border-orange-500 transition-all cursor-pointer flex items-center space-x-3.5 shadow-lg hover:scale-[1.02] text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-orange-500/10 text-orange-400 flex items-center justify-center text-2xl shadow border border-orange-500/25 group-hover:scale-110 transition-transform">
+                      🔥
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-orange-400 font-extrabold uppercase tracking-wide">RULES & MODES</div>
+                      <div className="text-white text-xs font-black">인게임 경기 모드 설정</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium leading-none mt-1">아이템전/스피드전/마라톤</div>
+                    </div>
+                  </button>
+
+                  {/* Button 4: My Garage Inventory */}
+                  <button
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab('garage'); }}
+                    className="group relative w-full p-4.5 p-4 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-800 hover:border-pink-500 transition-all cursor-pointer flex items-center space-x-3.5 shadow-lg hover:scale-[1.02] text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-pink-500/10 text-pink-405 text-pink-400 flex items-center justify-center text-2xl shadow border border-pink-500/20 group-hover:scale-110 transition-transform">
+                      🎒
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-pink-400 font-extrabold uppercase tracking-wide">MY GARAGE</div>
+                      <div className="text-white text-xs font-black">보유 카트바디 차고</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium leading-none mt-1">획득한 기체 교체 피팅</div>
+                    </div>
+                  </button>
+
+                  {/* Button 5: Driving guide */}
+                  <button
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab('guide'); }}
+                    className="group relative w-full p-3.5 rounded-xl bg-slate-950/80 border border-slate-850 hover:border-slate-700 transition-all cursor-pointer flex items-center space-x-2.5 hover:bg-slate-900 text-left text-xs"
+                  >
+                    <span className="text-lg">📔</span>
+                    <span className="text-gray-300 font-bold group-hover:text-white">초보자 라이더 길잡이 가이드</span>
+                  </button>
+                </div>
+
+                {/* Left guidance display */}
+                <div className="hidden lg:block bg-slate-950/50 p-3 rounded-2xl border border-slate-850/80 font-mono text-[9.5px] text-gray-400 leading-relaxed">
+                  <span className="text-pink-500 font-black block mb-0.5">※ 익스트림 드리프트 수칙</span>
+                  미행 곡면 구간 시프트(Shift) 클러치 연타 후, 직진 탈출 시점에 스페이스 바(Space) 파워 부스터를 발동해 순간 대단위 추월 가치를 점유하세요.
+                </div>
+              </div>
+
+              {/* === CENTER COLUMN: THE BEAUTIFUL 3D DIAGONAL QUARTER-VIEW KART (Column span: 5) === */}
+              <div className="lg:col-span-5 bg-gradient-to-b from-slate-950/60 to-slate-900/60 border-2 border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col justify-between items-center relative overflow-hidden group">
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.06)_0%,transparent_70%)] pointer-events-none" />
+                <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-pink-500/5 filter blur-3xl pointer-events-none" />
+                
+                <div className="w-full text-center z-10">
+                  <span className="text-[8px] font-black uppercase tracking-widest text-[#06b6d4] bg-cyan-950/30 border border-cyan-500/20 px-2.5 py-0.5 rounded-full">
+                    🏁 SELECTED KART MODEL
+                  </span>
+                  <h4 className="text-lg font-black text-white mt-1.5 uppercase tracking-wide flex items-center justify-center">
+                    <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse mr-2" style={{ backgroundColor: `#${currentKart.color.toString(16).padStart(6, '0')}` }} />
+                    <span>{currentKart.name}</span>
+                  </h4>
+                  <span className={`text-[8.5px] font-black px-2 py-0.5 rounded uppercase mt-1 inline-block ${
+                    currentKart.rarity === 'Legendary' ? 'bg-purple-900/30 text-purple-400 border border-purple-800/40' : currentKart.rarity === 'Rare' ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-800/40' : 'bg-slate-800 text-slate-400'
+                  }`}>
+                    {currentKart.rarity} 등급 기체
+                  </span>
+                </div>
+
+                {/* SLEEK ISOMETRIC 3D INTERACTIVE VISUAL CANVAS */}
+                <div className="relative w-64 h-44 flex items-center justify-center z-10 my-2 select-none group-hover:scale-105 transition-all duration-500">
+                  <div className="absolute bottom-[5px] w-48 h-10 bg-cyan-500/10 border border-cyan-500/30 rounded-full filter blur-sm transform -rotate-12 animate-pulse" />
+                  
+                  {/* Cyber grid circle */}
+                  <div 
+                    className="absolute bottom-[-15px] w-52 h-16 opacity-50 rounded-full border border-dashed animate-spin" 
+                    style={{ 
+                      borderColor: `#${currentKart.color.toString(16).padStart(6, '0')}80`,
+                      animationDuration: '14s',
+                      transform: 'rotateX(75deg) rotateY(15deg) rotateZ(0deg)'
+                    }} 
+                  />
+
+                  {/* 3D-angled Glass Perspective Kart wrapper */}
+                  <div 
+                    className="relative w-56 h-36 flex items-center justify-center transform transition-all duration-300"
+                    style={{
+                      transform: 'perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg)'
+                    }}
+                  >
+                    <svg className="w-full h-full drop-shadow-[0_12px_18px_rgba(0,0,0,0.85)]" viewBox="0 0 200 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <g>
+                        {/* Plasma Exhaust flamer particles */}
+                        <path d="M10 65 L-25 58 L5 72 Z" fill={`#${currentKart.flameColor.toString(16).padStart(6, '0')}`} className="opacity-75 animate-pulse" />
+                        <path d="M8 80 L-28 85 L5 88 Z" fill={`#${currentKart.flameColor.toString(16).padStart(6, '0')}`} className="opacity-80 animate-pulse" />
+                        <rect x="12" y="60" width="12" height="15" rx="3" fill="#334155" transform="rotate(-15, 12, 60)" />
+                        <rect x="10" y="76" width="12" height="15" rx="3" fill="#1e293b" transform="rotate(-15, 10, 76)" />
+
+                        {/* Spoiler wings */}
+                        <path d="M15 40 L65 15 L80 25 L30 50 Z" fill={`#${currentKart.color.toString(16).padStart(6, '0')}`} stroke="#ffffff" strokeWidth="1.2" />
+                        <path d="M15 40 L8 55 L30 50 Z" fill="#0f172a" />
+                        <path d="M65 15 L58 30 L80 25 Z" fill="#1e293b" />
+
+                        {/* Rear Tires */}
+                        <ellipse cx="45" cy="110" rx="19" ry="25" fill="#020617" stroke="#334155" strokeWidth="2" />
+                        <ellipse cx="45" cy="110" rx="9" ry="12" fill="#475569" />
+                        <circle cx="45" cy="110" r="4" fill="#cbd5e1" />
+
+                        {/* Front left wheel */}
+                        <ellipse cx="145" cy="115" rx="13" ry="17" fill="#090d16" stroke="#475569" strokeWidth="1.5" />
+                        <ellipse cx="145" cy="115" rx="5" ry="7" fill="#64748b" />
+
+                        {/* Chassis body */}
+                        <path d="M38 75 L125 55 L165 95 L50 115 Z" fill={`#${currentKart.color.toString(16).padStart(6, '0')}`} stroke="#ffffff" strokeWidth="1" />
+                        <path d="M52 72 L105 60 L120 78 L65 90 Z" fill="#0f172a" stroke="#475569" />
+                        <circle cx="82" cy="64" r="5" fill="#e2e8f0" />
+
+                        {/* Direct steering */}
+                        <line x1="110" y1="75" x2="125" y2="65" stroke="#f1f5f9" strokeWidth="2" />
+                        <ellipse cx="125" cy="65" rx="5" ry="8" fill="#ec4899" />
+
+                        {/* Hood decal and light reflections */}
+                        <path d="M115 50 L175 75 L185 85 L125 60 Z" fill={`#${(currentKart.color === 0xff007f ? 0x06b6d4 : 0xec4899).toString(16).padStart(6, '0')}`} />
+                        <path d="M150 78 L195 90 L180 102 L132 90 Z" fill={`#${currentKart.color.toString(16).padStart(6, '0')}`} stroke="#ffffff" strokeWidth="1" />
+                        <path d="M136 68 L170 85 L155 92 Z" fill="#ffffff" opacity="0.35" />
+                        <ellipse cx="120" cy="85" rx="11" ry="14" fill="#020617" opacity="0.75" />
+                      </g>
+                    </svg>
+                  </div>
+                  
+                  {/* Neon Underglow light */}
+                  <div 
+                    className="absolute bottom-[-5px] w-36 h-6 rounded-full filter blur-md animate-pulse" 
+                    style={{ backgroundColor: `#${currentKart.color.toString(16).padStart(6, '0')}45` }} 
                   />
                 </div>
-                <div className="flex items-center text-yellow-350 text-yellow-400 font-black text-md">
-                  <Coins className="mr-1 text-yellow-400" size={14} />
-                  <span>{gold} Gold</span>
+
+                {/* Carousel controller */}
+                <div className="w-full flex justify-between items-center px-3.5 bg-slate-900/60 border border-slate-800 rounded-xl py-1 z-10 max-w-[240px]">
+                  <button 
+                    onClick={() => {
+                      triggerAudioInit();
+                      const curIdx = KARTS.findIndex(k => k.id === selectedKartId);
+                      const prevIdx = (curIdx - 1 + KARTS.length) % KARTS.length;
+                      setSelectedKartId(KARTS[prevIdx].id);
+                    }}
+                    className="p-1 px-2.5 bg-slate-950 border border-slate-800 hover:border-cyan-400 rounded-lg text-[9.5px] font-black text-gray-300 hover:text-white cursor-pointer transition-colors"
+                  >
+                    ◀ PREV
+                  </button>
+                  <span className="text-[9px] text-gray-400 font-mono font-black uppercase">CAROUSEL</span>
+                  <button 
+                    onClick={() => {
+                      triggerAudioInit();
+                      const curIdx = KARTS.findIndex(k => k.id === selectedKartId);
+                      const nextIdx = (curIdx + 1) % KARTS.length;
+                      setSelectedKartId(KARTS[nextIdx].id);
+                    }}
+                    className="p-1 px-2.5 bg-slate-950 border border-slate-800 hover:border-cyan-400 rounded-lg text-[9.5px] font-black text-gray-300 hover:text-white cursor-pointer transition-colors"
+                  >
+                    NEXT ▶
+                  </button>
+                </div>
+
+                {/* Stats indicators */}
+                <div className="w-full z-10 grid grid-cols-4 gap-1 pb-1 pt-2.5 text-center border-t border-white/5 font-mono">
+                  <div className="bg-slate-950/60 p-1.5 rounded-xl border border-slate-850">
+                    <span className="text-[7.5px] text-gray-500 block font-bold leading-none">가속성</span>
+                    <span className="text-[10px] font-black text-white block mt-0.5">{(currentKart.stats.speed * 180).toFixed(0)}</span>
+                  </div>
+                  <div className="bg-slate-950/60 p-1.5 rounded-xl border border-slate-850">
+                    <span className="text-[7.5px] text-gray-500 block font-bold leading-none">추진력</span>
+                    <span className="text-[10px] font-black text-pink-400 block mt-0.5">{(currentKart.stats.accel * 10000).toFixed(0)}</span>
+                  </div>
+                  <div className="bg-slate-950/60 p-1.5 rounded-xl border border-slate-850">
+                    <span className="text-[7.5px] text-gray-500 block font-bold leading-none">충전율</span>
+                    <span className="text-[10px] font-black text-cyan-400 block mt-0.5">{(currentKart.stats.drift * 50).toFixed(0)}</span>
+                  </div>
+                  <div className="bg-slate-950/60 p-1.5 rounded-xl border border-slate-850">
+                    <span className="text-[7.5px] text-gray-500 block font-bold leading-none">핸들링</span>
+                    <span className="text-[10px] font-black text-yellow-400 block mt-0.5">{(currentKart.stats.handling * 1000).toFixed(0)}</span>
+                  </div>
+                </div>
+
+                {/* Locked block overlay inside card to prevent confusion */}
+                {!unlockedKarts.includes(currentKart.id) && (
+                  <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-xs flex flex-col justify-center items-center p-3 z-[15] text-center">
+                    <span className="text-2xl mb-1">🔒</span>
+                    <span className="text-yellow-400 text-[8.5px] font-black uppercase tracking-wider bg-yellow-400/10 px-2 py-0.5 rounded border border-yellow-500/20">미획득 파츠</span>
+                    <button
+                      onClick={() => { triggerAudioInit(); setActiveMenuTab('gacha'); }}
+                      className="mt-3 px-3 py-1 bg-yellow-400 hover:bg-yellow-300 text-slate-950 text-[9px] font-black rounded-lg transition-transform active:scale-95 cursor-pointer shadow"
+                    >
+                      🎰 행운 뽑기 상점으로 획득
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* === RIGHT COLUMN: THE EXTRA-LARGE ONLINE MULTIPLAYER matchmaker (Column span: 4) === */}
+              <div className="lg:col-span-4 bg-slate-900 border-2 border-slate-700/60 rounded-3xl p-5 shadow-2xl flex flex-col justify-between items-stretch min-h-[350px] relative overflow-hidden group">
+                <div className="absolute top-0 right-0 w-32 h-32 rounded-full bg-teal-500/5 filter blur-2xl pointer-events-none" />
+                
+                <div className="z-10 flex flex-col flex-1 justify-between">
+                  <div className="border-b border-teal-500/20 pb-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black text-teal-400 bg-teal-500/10 px-2 py-0.5 rounded border border-teal-500/25 animate-pulse">
+                        📡 MATCHMAKING SYSTEM
+                      </span>
+                      <Radio size={14} className="text-teal-400 animate-pulse" />
+                    </div>
+                    <h3 className="text-sm font-black text-white mt-1.5">실시간 양방향 멀티 대전</h3>
+                    <p className="text-[10.5px] text-gray-400 mt-1.5 leading-relaxed font-sans font-medium">
+                      고유 참가 코드를 이용한 매칭. 같은 강의실 또는 다른 기기의 학생 레이서들을 대기실로 원격 소집하여 연계 대전을 즐기세요!
+                    </p>
+                  </div>
+
+                  {/* Native multiplayer controls always open and beautifully prominent */}
+                  <div className="mt-4 flex-1 flex flex-col justify-center">
+                    {!netRole ? (
+                      <div className="space-y-3 font-mono">
+                        {/* Option 1: Host Room */}
+                        <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-850 flex items-center justify-between hover:border-teal-500/40 transition-colors">
+                          <div className="text-left">
+                            <span className="text-[8.5px] text-teal-400 font-bold block mb-0.5">TEACHER CLIENT</span>
+                            <span className="text-xs font-black text-white">대기방 신형 개설</span>
+                          </div>
+                          <button
+                            onClick={handleHostCreate}
+                            className="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-[10px] rounded-lg shadow cursor-pointer transition-transform active:scale-95"
+                          >
+                            방 개설
+                          </button>
+                        </div>
+
+                        {/* Option 2: Join Room with input code */}
+                        <div className="bg-slate-950 p-3 rounded-xl border border-slate-850 flex flex-col gap-2 hover:border-cyan-500/40 transition-colors">
+                          <span className="text-[8.5px] text-cyan-400 font-bold block leading-none">STUDENT CLIENT (참가 코드 입력)</span>
+                          <div className="flex gap-2">
+                            <input 
+                              type="text"
+                              value={roomIdInput}
+                              onChange={(e) => setRoomIdInput(e.target.value)}
+                              placeholder="코드 4자리"
+                              maxLength={12}
+                              className="flex-1 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-yellow-300 outline-none focus:border-cyan-500 font-black tracking-widest text-center uppercase"
+                            />
+                            <button
+                              onClick={handleClientJoin}
+                              className="px-3.5 py-1 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-black text-[10px] rounded-lg shadow cursor-pointer transition-transform active:scale-95"
+                            >
+                              입장
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Active Sync connections display block */
+                      <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850 flex flex-col justify-between h-full min-h-[170px] text-xs font-mono">
+                        <div>
+                          <div className="flex justify-between items-center text-[10px] border-b border-white/5 pb-1 mb-2">
+                            <span className="text-teal-400 font-bold uppercase">CONNECT STATUS</span>
+                            <span className="font-extrabold text-white">동조 인원: {participants.length}명</span>
+                          </div>
+                          <div className="text-[10px] text-gray-300 max-h-[85px] overflow-y-auto space-y-1">
+                            {participants.map((p, idx) => (
+                              <div key={p.peerId} className="flex justify-between items-center bg-slate-900/40 p-1 px-2 rounded">
+                                <span className="truncate max-w-[120px]">{p.name} ({p.role === 'host' ? '방장' : '학생'})</span>
+                                <span className="text-[8.5px] text-cyan-400">{p.lastOutcome ? '완주🏁' : '대기중'}</span>
+                              </div>
+                            ))}
+                            {participants.length === 0 && (
+                              <span className="text-gray-500 block text-center py-2">연결된 대전 라이더가 없습니다.</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Control actions */}
+                        <div className="flex gap-2 mt-2 pt-2 border-t border-white/5">
+                          {netRole === 'host' && (
+                            <button 
+                              onClick={() => launchRace()}
+                              className="flex-1 py-1.5 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-500 hover:from-teal-400 text-slate-950 font-black text-[10px] cursor-pointer shadow active:scale-95 transition-all text-center"
+                            >
+                              동시 레이스 시동 🚀
+                            </button>
+                          )}
+                          <button
+                            onClick={handleDisconnectNetwork}
+                            className="px-2.5 py-1.5 bg-red-950/80 border border-red-500/25 hover:bg-red-900 rounded-lg text-[9.5px] font-black text-red-400 shadow active:scale-95 cursor-pointer text-center"
+                          >
+                            종료
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Tip banner */}
+                  <div className="mt-3 bg-slate-950/40 p-2 rounded-xl border border-slate-850/60 text-[9.5px] text-slate-400 leading-normal text-center">
+                    💡 <b>Tip:</b> 여러 명이 대전하지 않고 혼자 질주 주행하고 싶다면 하단의 <strong>'레이스 스타트 !!'</strong>를 터치하십시오.
+                  </div>
                 </div>
               </div>
+
             </div>
           </div>
 
-          {/* DYNAMIC TAB NAVIGATION BAR */}
-          <div className="w-full max-w-7xl mx-auto z-10 my-4">
-            <div className="flex flex-wrap bg-slate-950 p-1.5 rounded-2xl border border-slate-800/90 gap-1.5 justify-center md:justify-start">
-              <button
-                type="button"
-                onClick={() => { triggerAudioInit(); setActiveMenuTab('garage'); }}
-                className={`flex items-center space-x-2 py-2 px-3.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                  activeMenuTab === 'garage' 
-                    ? 'bg-pink-500 text-slate-950 shadow-[0_0_12px_rgba(244,63,94,0.45)]' 
-                    : 'text-gray-400 hover:text-white hover:bg-slate-900/40'
-                }`}
-              >
-                <Trophy size={14} />
-                <span>차고 기어</span>
-              </button>
+          {/* MAIN TABBED CONTROLLER WORKSPACE (FLOATING GLASS OVERLAY MODAL) */}
+          {activeMenuTab !== null && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+              <div className="relative max-w-4xl w-full bg-slate-900 border-2 border-slate-700 rounded-3xl p-6 shadow-2xl flex flex-col text-white max-h-[85vh] overflow-y-auto normal-scrollbar">
+                
+                {/* Modal Title / Close Button */}
+                <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xl">
+                      {activeMenuTab === 'gacha' ? '🎰' : activeMenuTab === 'maps' ? '🗺️' : activeMenuTab === 'modes' ? '🔥' : activeMenuTab === 'garage' ? '🎒' : '📔'}
+                    </span>
+                    <h3 className="text-md font-black text-white uppercase tracking-wider">
+                      {activeMenuTab === 'gacha' && '카트 캡슐 행운상자 슈터 (Gacha Capsule Shop)'}
+                      {activeMenuTab === 'maps' && '레이싱 트랙 맵 서킷 선택 (Choose Track Worlds)'}
+                      {activeMenuTab === 'modes' && '게임 대결 경기 규칙 설정 (Setup Game Rules)'}
+                      {activeMenuTab === 'garage' && '내 차고 기어 장비 보관소 (My Cart Garage)'}
+                      {activeMenuTab === 'guide' && '초보자 레이서 드라이빙 가이드 (Guidebook)'}
+                    </h3>
+                  </div>
+                  <button 
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab(null); }}
+                    className="w-8 h-8 rounded-full bg-slate-950 border border-slate-800 hover:border-pink-500 hover:text-pink-400 text-gray-400 flex items-center justify-center font-black text-sm cursor-pointer transition-colors"
+                  >
+                    ✕
+                  </button>
+                </div>
 
-              <button
-                type="button"
-                onClick={() => { triggerAudioInit(); setActiveMenuTab('maps'); }}
-                className={`flex items-center space-x-2 py-2 px-3.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                  activeMenuTab === 'maps' 
-                    ? 'bg-cyan-500 text-slate-950 shadow-[0_0_12px_rgba(6,182,212,0.45)]' 
-                    : 'text-gray-400 hover:text-white hover:bg-slate-900/40'
-                }`}
-              >
-                <Compass size={14} />
-                <span>트랙 맵 선택</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { triggerAudioInit(); setActiveMenuTab('modes'); }}
-                className={`flex items-center space-x-2 py-2 px-3.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                  activeMenuTab === 'modes' 
-                    ? 'bg-orange-500 text-slate-950 shadow-[0_0_12px_rgba(249,115,22,0.45)]' 
-                    : 'text-gray-400 hover:text-white hover:bg-slate-900/40'
-                }`}
-              >
-                <Flame size={14} />
-                <span>인게임 모드</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { triggerAudioInit(); setActiveMenuTab('gacha'); }}
-                className={`flex items-center space-x-2 py-2 px-3.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                  activeMenuTab === 'gacha' 
-                    ? 'bg-yellow-405 bg-yellow-450 bg-yellow-400 text-slate-950 shadow-[0_0_12px_rgba(234,179,8,0.45)]' 
-                    : 'text-gray-400 hover:text-white hover:bg-slate-900/40'
-                }`}
-              >
-                <Sparkles size={14} />
-                <span>뽑기 상점</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { triggerAudioInit(); setActiveMenuTab('multiplayer'); }}
-                className={`flex items-center space-x-2 py-2 px-3.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                  activeMenuTab === 'multiplayer' 
-                    ? 'bg-gradient-to-r from-teal-500 to-cyan-500 text-slate-950 shadow-[0_0_15px_rgba(6,182,212,0.5)]' 
-                    : 'text-cyan-400 hover:text-white hover:bg-slate-900/40'
-                }`}
-              >
-                <Radio size={14} className="animate-pulse" />
-                <span>멀티 대전 (P2P)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => { triggerAudioInit(); setActiveMenuTab('guide'); }}
-                className={`flex items-center space-x-2 py-2 px-3.5 text-xs font-black rounded-xl transition-all cursor-pointer ${
-                  activeMenuTab === 'guide' 
-                    ? 'bg-slate-700 text-white shadow' 
-                    : 'text-gray-400 hover:text-white'
-                }`}
-              >
-                <Info size={14} />
-                <span>가이드</span>
-              </button>
-            </div>
-          </div>
-
-          {/* MAIN TABBED CONTROLLER WORKSPACE */}
-          <div className="w-full max-w-7xl mx-auto flex-1 z-10 my-1 min-h-[350px] flex flex-col justify-stretch">
-            <AnimatePresence mode="wait">
+                <div className="w-full">
+                  <AnimatePresence mode="wait">
               
               {/* === TAB 1: GARAGE (차고) === */}
               {activeMenuTab === 'garage' && (
@@ -1075,7 +1552,7 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                     {MAPS.map((m) => {
                       const isSelected = selectedMapId === m.id;
-                      const difficultyColor = m.difficulty === '★★★' ? 'text-red-500' : m.difficulty === '★★☆' ? 'text-yellow-400' : 'text-green-450 text-green-400';
+                      const difficultyColor = (m.difficulty === '★★★' || m.difficulty === '어려움') ? 'text-red-500' : (m.difficulty === '★★☆' || m.difficulty === '중') ? 'text-yellow-400' : 'text-green-450 text-green-400';
                       return (
                         <button
                           key={m.id}
@@ -1262,11 +1739,11 @@ export default function App() {
                     
                     <div>
                       <span className="text-[9px] font-black text-yellow-400 bg-yellow-400/10 px-3 py-1 rounded-full uppercase tracking-widest mb-2 inline-block">
-                        LUCKY TOON PIXELS
+                        🎰 LUCKY CAPSULE MACHINE
                       </span>
                       <h4 className="text-lg font-black text-white mt-1.5">카트 캡슐 행운상자 슈터</h4>
                       <p className="text-xs text-gray-400 mt-1 max-w-[325px] leading-relaxed">
-                        1회 <strong>100 Gold</strong>를 투입하여 룰렛을 당깁니다. 만일 이미 내가 획득한 중복 카트인 경우, 보상 차원으로 <strong>50 Gold (50%)</strong>를 차고 기여 환전급으로 자동 편의 반환합니다.
+                        1회 주행 시 획득한 골드를 모아 <strong>100 Gold</strong>로 행운 상자를 뽑으세요. 만일 이미 보유 중인 중복 카트 바디를 획득할 경우, 보상 차원으로 <strong>50 Gold (50%)</strong>가 계정으로 자동 페이백 처리됩니다.
                       </p>
                     </div>
 
@@ -1620,6 +2097,9 @@ export default function App() {
                         <p>
                           3. <b>아이템 시정:</b> 아이템 상자전에서는 획득한 각 아이템(미사일, 바나나, 실드, 미니부스터)을 우연성 연계로 시뮬레이션하여 전략적 승리를 거머쥘 수 있습니다.
                         </p>
+                        <p>
+                          4. <b>코스 구조와 선택:</b> 커브가 많은 구간은 빨리 달리며 커브를 하기 힘들기에 고속 차량이 불편할 수 있습니다. 맵에 어울리는 스탯의 카트를 매칭해 보세요.
+                        </p>
                       </div>
                     </div>
 
@@ -1630,13 +2110,16 @@ export default function App() {
                 </motion.div>
               )}
 
-            </AnimatePresence>
-          </div>
+                  </AnimatePresence>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* LOWER HUB ACTION STARTER */}
           <div className="w-full max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center bg-slate-900 shadow-xl border-x-2 border-t-2 border-pink-500 rounded-t-3xl px-6 md:px-8 py-4.5 py-4 gap-4 mt-2 z-10">
             <div className="text-center md:text-left">
-              <span className="text-[8.5px] text-pink-400 font-black tracking-wider block uppercase">READY RACING ARRANGEMENT</span>
+              <span className="text-[9px] text-pink-400 font-black tracking-wider block uppercase font-mono">🏁 MATCH READY SETTINGS</span>
               <div className="flex flex-wrap items-center justify-center md:justify-start gap-1.5 text-xs text-slate-300 mt-1">
                 <span className="font-extrabold text-white bg-slate-950 px-2 py-0.5 rounded border border-slate-800 flex items-center">
                   <MapPin size={11} className="mr-1 text-cyan-400" />
@@ -1860,6 +2343,134 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* Floating Virtual Touch Controller for Mobile Mode */}
+          {controlMode === 'mobile' && (
+            <div className="absolute inset-x-0 bottom-28 md:bottom-24 z-40 flex justify-between px-4 sm:px-10 pointer-events-none select-none">
+              {/* LEFT SIDE: STEERING BUTTONS */}
+              <div className="flex space-x-4 pointer-events-auto">
+                {/* TURN LEFT (ArrowLeft) */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = true; }}
+                  onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = false; }}
+                  onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = false; }}
+                  onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = true; }}
+                  onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = false; }}
+                  onMouseLeave={() => { keysPressedRef.current['ArrowLeft'] = false; }}
+                  onPointerDown={(e) => {
+                    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+                    keysPressedRef.current['ArrowLeft'] = true;
+                  }}
+                  onPointerUp={() => { keysPressedRef.current['ArrowLeft'] = false; }}
+                  onPointerCancel={() => { keysPressedRef.current['ArrowLeft'] = false; }}
+                  onPointerLeave={() => { keysPressedRef.current['ArrowLeft'] = false; }}
+                  className="w-20 h-20 rounded-full bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 text-white border-4 border-cyan-500/50 active:border-cyan-400 flex items-center justify-center text-3xl font-black shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                >
+                  ◀
+                </button>
+
+                {/* TURN RIGHT (ArrowRight) */}
+                <button
+                  onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = true; }}
+                  onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = false; }}
+                  onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = false; }}
+                  onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = true; }}
+                  onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = false; }}
+                  onMouseLeave={() => { keysPressedRef.current['ArrowRight'] = false; }}
+                  onPointerDown={(e) => {
+                    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+                    keysPressedRef.current['ArrowRight'] = true;
+                  }}
+                  onPointerUp={() => { keysPressedRef.current['ArrowRight'] = false; }}
+                  onPointerCancel={() => { keysPressedRef.current['ArrowRight'] = false; }}
+                  onPointerLeave={() => { keysPressedRef.current['ArrowRight'] = false; }}
+                  className="w-20 h-20 rounded-full bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 text-white border-4 border-cyan-500/50 active:border-cyan-400 flex items-center justify-center text-3xl font-black shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                >
+                  ▶
+                </button>
+              </div>
+
+              {/* RIGHT SIDE: DRIVE & EXTREME BUTTONS */}
+              <div className="flex flex-col items-end space-y-4 pointer-events-auto">
+                <div className="flex space-x-3">
+                  {/* SPEED ITEM SLINGER / BOOST ACTION (Space / triggerItemSlinger) */}
+                  <button
+                    onTouchStart={(e) => { e.preventDefault(); triggerItemSlinger(); }}
+                    onMouseDown={(e) => { e.preventDefault(); triggerItemSlinger(); }}
+                    onPointerDown={() => { triggerItemSlinger(); }}
+                    className="w-16 h-16 rounded-full bg-gradient-to-tr from-pink-500 via-rose-500 to-amber-500 active:brightness-125 border-4 border-pink-500/40 flex flex-col items-center justify-center text-white font-black shadow-2xl transition-all active:scale-90 animate-pulse cursor-pointer select-none touch-none"
+                  >
+                    <span className="text-xl leading-none">⚡</span>
+                    <span className="text-[8px] font-mono tracking-tight mt-0.5 leading-none">BOOST</span>
+                  </button>
+
+                  {/* DRIFT CLUTCH (Shift) */}
+                  <button
+                    onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = true; }}
+                    onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
+                    onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
+                    onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = true; }}
+                    onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
+                    onMouseLeave={() => { keysPressedRef.current['Shift'] = false; }}
+                    onPointerDown={(e) => {
+                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+                      keysPressedRef.current['Shift'] = true;
+                    }}
+                    onPointerUp={() => { keysPressedRef.current['Shift'] = false; }}
+                    onPointerCancel={() => { keysPressedRef.current['Shift'] = false; }}
+                    onPointerLeave={() => { keysPressedRef.current['Shift'] = false; }}
+                    className="w-20 h-20 rounded-3xl bg-slate-900/90 active:bg-yellow-500 active:text-slate-950 text-white border-4 border-yellow-500/50 active:border-yellow-400 flex flex-col items-center justify-center shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                  >
+                    <span className="text-2xl leading-none">↩</span>
+                    <span className="text-[10px] font-bold mt-1 tracking-wider font-display uppercase">DRIFT</span>
+                  </button>
+                </div>
+
+                <div className="flex space-x-4 items-center">
+                  {/* ENGINE BRAKE / REVERSE (ArrowDown) */}
+                  <button
+                    onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = true; }}
+                    onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = false; }}
+                    onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = false; }}
+                    onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = true; }}
+                    onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = false; }}
+                    onMouseLeave={() => { keysPressedRef.current['ArrowDown'] = false; }}
+                    onPointerDown={(e) => {
+                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+                      keysPressedRef.current['ArrowDown'] = true;
+                    }}
+                    onPointerUp={() => { keysPressedRef.current['ArrowDown'] = false; }}
+                    onPointerCancel={() => { keysPressedRef.current['ArrowDown'] = false; }}
+                    onPointerLeave={() => { keysPressedRef.current['ArrowDown'] = false; }}
+                    className="w-16 h-16 rounded-2xl bg-slate-900/90 active:bg-red-500 active:text-white text-white border-4 border-red-500/50 active:border-red-400 flex items-center justify-center text-2xl font-black shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                  >
+                    ▼
+                  </button>
+
+                  {/* ENGINE GO ACCEL (ArrowUp) */}
+                  <button
+                    onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = true; }}
+                    onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = false; }}
+                    onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = false; }}
+                    onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = true; }}
+                    onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = false; }}
+                    onMouseLeave={() => { keysPressedRef.current['ArrowUp'] = false; }}
+                    onPointerDown={(e) => {
+                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+                      keysPressedRef.current['ArrowUp'] = true;
+                    }}
+                    onPointerUp={() => { keysPressedRef.current['ArrowUp'] = false; }}
+                    onPointerCancel={() => { keysPressedRef.current['ArrowUp'] = false; }}
+                    onPointerLeave={() => { keysPressedRef.current['ArrowUp'] = false; }}
+                    className="w-24 h-24 rounded-full bg-slate-900/90 active:bg-green-500 active:text-slate-950 text-green-450 text-green-400 border-4 border-green-500/50 active:border-green-400 flex flex-col items-center justify-center shadow-2xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                  >
+                    <span className="text-[10px] tracking-widest font-black leading-none mb-1">ACCEL</span>
+                    <span className="text-3xl leading-none">▲</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

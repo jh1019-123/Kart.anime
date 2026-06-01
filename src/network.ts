@@ -4,6 +4,7 @@ import { Participant, RaceOutcome } from './types';
 export class PeerNetworkManager {
   peer: Peer | null = null;
   connections: Record<string, DataConnection> = {};
+  hostConnection: DataConnection | null = null;
   role: 'host' | 'client' | null = null;
   myInfo: Participant;
   participants: Participant[] = [];
@@ -30,9 +31,10 @@ export class PeerNetworkManager {
   init(role: 'host' | 'client', roomIdAttempt?: string) {
     try {
       this.role = role;
+      const sanitizedRoomId = roomIdAttempt ? roomIdAttempt.trim().toUpperCase() : undefined;
       
       // Configure PeerJS to connect to public free cloud server
-      const peerId = role === 'host' && roomIdAttempt ? `kart-room-${roomIdAttempt}` : undefined;
+      const peerId = role === 'host' && sanitizedRoomId ? `kart-room-${sanitizedRoomId}` : undefined;
       
       this.peer = new Peer(peerId || '', {
         debug: 1, // Minimize warning logs to avoid console bloat
@@ -53,7 +55,11 @@ export class PeerNetworkManager {
         
         const displayCode = id.startsWith('kart-room-') ? id.replace('kart-room-', '') : id;
         if (this.onRoomIdAssigned) {
-          this.onRoomIdAssigned(displayCode);
+          if (role === 'host') {
+            this.onRoomIdAssigned(displayCode);
+          } else if (sanitizedRoomId) {
+            this.onRoomIdAssigned(sanitizedRoomId);
+          }
         }
         
         if (role === 'host') {
@@ -62,10 +68,10 @@ export class PeerNetworkManager {
           this.onConnectionStatus(`방이 생성되었습니다! 초대 코드: ${displayCode}`);
         } else {
           this.onConnectionStatus(`중계서버 접속 완료. 방장 신호 탐색 중...`);
-          if (roomIdAttempt) {
-            const targetId = roomIdAttempt.includes('kart-room-') || roomIdAttempt.length > 8
-              ? roomIdAttempt
-              : `kart-room-${roomIdAttempt}`;
+          if (sanitizedRoomId) {
+            const targetId = sanitizedRoomId.includes('kart-room-') || sanitizedRoomId.length > 8
+              ? sanitizedRoomId
+              : `kart-room-${sanitizedRoomId}`;
             this.connectToHost(targetId);
           }
         }
@@ -107,6 +113,7 @@ export class PeerNetworkManager {
     if (!this.peer) return;
     
     const conn = this.peer.connect(hostPeerId);
+    this.hostConnection = conn;
     this.handleIncomingConnection(conn);
   }
 
@@ -340,9 +347,14 @@ export class PeerNetworkManager {
 
   // Send packet to Host
   private sendToHost(data: any) {
-    const hostConn = Object.values(this.connections)[0];
+    const hostConn = this.hostConnection;
     if (hostConn && hostConn.open) {
       hostConn.send(data);
+    } else {
+      const fallbackConn = Object.values(this.connections)[0];
+      if (fallbackConn && fallbackConn.open) {
+        fallbackConn.send(data);
+      }
     }
   }
 
@@ -359,6 +371,7 @@ export class PeerNetworkManager {
   cleanup() {
     Object.values(this.connections).forEach(c => c.close());
     this.connections = {};
+    this.hostConnection = null;
     if (this.peer) {
       try {
         this.peer.destroy();

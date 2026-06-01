@@ -230,6 +230,9 @@ export default function App() {
       code += charset.charAt(Math.floor(Math.random() * charset.length));
     }
 
+    // Set Room ID immediately for instant user feedback
+    setRoomIdLive(code);
+
     const netManager = new PeerNetworkManager(playerNameInput);
     netManagerRef.current = netManager;
 
@@ -1308,6 +1311,21 @@ export default function App() {
                       /* Active Sync connections display block */
                       <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850 flex flex-col justify-between h-full min-h-[170px] text-xs font-mono">
                         <div>
+                          {netRole === 'host' && (
+                            <div className="mb-3 bg-teal-500/10 border border-teal-500/20 p-2 rounded-xl flex items-center justify-between">
+                              <div>
+                                <span className="text-[8.5px] text-gray-400 font-bold block">학생 실시간 참여코드</span>
+                                <span className="text-sm font-black text-yellow-300 tracking-wider block mt-0.5 select-all">{roomIdLive || "생성 중..."}</span>
+                              </div>
+                              <button
+                                onClick={copyRoomCode}
+                                className="p-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-lg transition cursor-pointer text-gray-300 active:scale-95 flex items-center justify-center"
+                                title="코드 복사"
+                              >
+                                {copiedCode ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                              </button>
+                            </div>
+                          )}
                           <div className="flex justify-between items-center text-[10px] border-b border-white/5 pb-1 mb-2">
                             <span className="text-teal-400 font-bold uppercase">CONNECT STATUS</span>
                             <span className="font-extrabold text-white">동조 인원: {participants.length}명</span>

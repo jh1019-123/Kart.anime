@@ -74,9 +74,99 @@ export default function App() {
     }
   });
 
+  // --- Extended Profile, Progression, Achievements & Ghost States ---
+  const [level, setLevel] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('anime_level');
+      return saved ? parseInt(saved, 10) : 1;
+    } catch (e) { return 1; }
+  });
+  const [xp, setXp] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('anime_xp');
+      return saved ? parseInt(saved, 10) : 0;
+    } catch (e) { return 0; }
+  });
+  const [rankPoints, setRankPoints] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('anime_rank_points');
+      return saved ? parseInt(saved, 10) : 350; // starts at Silver III
+    } catch (e) { return 350; }
+  });
+  const [selectedTitle, setSelectedTitle] = useState<string>(() => {
+    return localStorage.getItem('anime_selected_title') || '초보 라이더';
+  });
+  const [unlockedTitles, setUnlockedTitles] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('anime_unlocked_titles');
+      return saved ? JSON.parse(saved) : ['초보 라이더', '동네 한바퀴'];
+    } catch (e) { return ['초보 라이더', '동네 한바퀴']; }
+  });
+  const [selectedSkinColor, setSelectedSkinColor] = useState<string>(() => {
+    return localStorage.getItem('anime_selected_skin') || 'default';
+  });
+  const [unlockedSkins, setUnlockedSkins] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('anime_unlocked_skins');
+      return saved ? JSON.parse(saved) : ['default'];
+    } catch (e) { return ['default']; }
+  });
+  const [bestTimes, setBestTimes] = useState<Record<string, { timeMs: number, timeStr: string, date: string }>>(() => {
+    try {
+      const saved = localStorage.getItem('anime_best_times');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) { return {}; }
+  });
+  const [selectedGhostMode, setSelectedGhostMode] = useState<'none' | 'my_best' | 'friend_ghost' | 'rival_1st'>('none');
+  const [mapRecommendations, setMapRecommendations] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('anime_map_recs');
+      return saved ? JSON.parse(saved) : {
+        neon_sky_way: 124,
+        cyberspace_tunnel: 245,
+        cosmic_highway: 382,
+        lava_crevice: 189,
+        frozen_glacier: 156
+      };
+    } catch (e) {
+      return { neon_sky_way: 124, cyberspace_tunnel: 245, cosmic_highway: 382, lava_crevice: 189, frozen_glacier: 156 };
+    }
+  });
+
+  const [rankingsSubTab, setRankingsSubTab] = useState<'profile' | 'leaderboard' | 'achievements'>('profile');
+  const [rankingFilter, setRankingFilter] = useState<'global' | 'friends' | 'time_attack' | 'season'>('global');
+
+  const [achievements, setAchievements] = useState<Array<{
+    id: string;
+    name: string;
+    desc: string;
+    target: number;
+    current: number;
+    completed: boolean;
+    rewardClaimed: boolean;
+    rewardGold: number;
+    rewardTitle?: string;
+    rewardSkin?: string;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem('anime_achievements');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {}
+    return [
+      { id: 'drift_count', name: '드리프트 매니아', desc: '코너 길목 드리프트 15회 주행 달성', target: 15, current: 0, completed: false, rewardClaimed: false, rewardGold: 150, rewardTitle: '아스팔트 마스터' },
+      { id: 'use_booster', name: '질풍노도', desc: '순간 가속 질주 부스터 10회 점화', target: 10, current: 0, completed: false, rewardClaimed: false, rewardGold: 200, rewardTitle: '포뮬러 라이더' },
+      { id: 'maps_cleared', name: '그랜드 투어러', desc: '서킷 완주 5회 완료', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 300, rewardTitle: '바람의 지배자', rewardSkin: 'magma_red' },
+      { id: 'gacha_spins', name: '차고지 대부', desc: '행운의 뽑기 상점 3회 참여', target: 3, current: 0, completed: false, rewardClaimed: false, rewardGold: 100, rewardTitle: '수집 대마왕' },
+      { id: 'time_under_65', name: '한계 돌파', desc: '스카이 웨이 완주 리포트 65초 미만 돌파', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 400, rewardTitle: '빛의 속도', rewardSkin: 'diamond_silver' }
+    ];
+  });
+
   // --- UI Layout & Navigation States ---
   // Reorganized lobby as unified full-width tabs
-  const [activeMenuTab, setActiveMenuTab] = useState<'garage' | 'maps' | 'modes' | 'gacha' | 'multiplayer' | 'guide' | null>(null);
+  const [activeMenuTab, setActiveMenuTab] = useState<'garage' | 'maps' | 'modes' | 'gacha' | 'multiplayer' | 'guide' | 'rankings' | null>(null);
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'finished'>('lobby');
   const [gameMode, setGameMode] = useState<'speed' | 'item' | 'time_attack' | 'ten_laps' | 'super_nitro'>('speed');
   const [leaderboard, setLeaderboard] = useState<Array<{
@@ -140,6 +230,10 @@ export default function App() {
     playerWon: boolean;
     finalTimeStr: string;
     earnedGold: number;
+    earnedXp?: number;
+    levelUpAward?: string;
+    earnedRp?: number;
+    recordComparisonText?: string;
   }>({
     playerWon: true,
     finalTimeStr: '00:00.00',
@@ -178,6 +272,91 @@ export default function App() {
     localStorage.setItem('network_player_name', playerNameInput);
   }, [playerNameInput]);
 
+  useEffect(() => {
+    localStorage.setItem('anime_level', level.toString());
+  }, [level]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_xp', xp.toString());
+  }, [xp]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_rank_points', rankPoints.toString());
+  }, [rankPoints]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_selected_title', selectedTitle);
+  }, [selectedTitle]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_unlocked_titles', JSON.stringify(unlockedTitles));
+  }, [unlockedTitles]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_selected_skin', selectedSkinColor);
+  }, [selectedSkinColor]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_unlocked_skins', JSON.stringify(unlockedSkins));
+  }, [unlockedSkins]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_map_recs', JSON.stringify(mapRecommendations));
+  }, [mapRecommendations]);
+
+  // Unified progression & helper functions
+  const getTierInfo = (points: number) => {
+    if (points < 200) return { name: '브론즈 III', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', icon: '🥉', min: 0, max: 199 };
+    if (points < 400) return { name: '브론즈 II', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', icon: '🥉', min: 200, max: 399 };
+    if (points < 600) return { name: '브론즈 I', color: 'text-amber-500 bg-amber-500/10 border-amber-500/20', icon: '🥉', min: 400, max: 599 };
+    if (points < 800) return { name: '실버 III', color: 'text-slate-350 bg-slate-300/10 border-slate-300/20', icon: '🥈', min: 600, max: 799 };
+    if (points < 1000) return { name: '실버 II', color: 'text-slate-350 bg-slate-300/10 border-slate-300/20', icon: '🥈', min: 800, max: 999 };
+    if (points < 1200) return { name: '실버 I', color: 'text-slate-350 bg-slate-300/10 border-slate-300/20', icon: '🥈', min: 1000, max: 1199 };
+    if (points < 1500) return { name: '골드 III', color: 'text-yellow-400 bg-yellow-400/10 border-yellow-500/20', icon: '🥇', min: 1200, max: 1499 };
+    if (points < 1800) return { name: '골드 II', color: 'text-yellow-400 bg-yellow-400/10 border-yellow-500/20', icon: '🥇', min: 1500, max: 1799 };
+    if (points < 2100) return { name: '골드 I', color: 'text-yellow-400 bg-yellow-400/10 border-yellow-500/20', icon: '🥇', min: 1800, max: 2099 };
+    if (points < 2500) return { name: '플래티넘 III', color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20', icon: '💎', min: 2100, max: 2499 };
+    if (points < 2900) return { name: '플래티넘 II', color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20', icon: '💎', min: 2500, max: 2889 };
+    if (points < 3300) return { name: '플래티넘 I', color: 'text-cyan-400 bg-cyan-400/10 border-cyan-400/20', icon: '💎', min: 2900, max: 3299 };
+    if (points < 3800) return { name: '다이아몬드 III', color: 'text-violet-400 bg-violet-400/10 border-violet-400/25', icon: '👑', min: 3300, max: 3799 };
+    if (points < 4300) return { name: '다이아몬드 II', color: 'text-violet-400 bg-violet-400/10 border-violet-400/25', icon: '👑', min: 3800, max: 4299 };
+    return { name: '다이아몬드 I', color: 'text-rose-400 bg-rose-400/10 border-rose-400/25', icon: '🔥', min: 4300, max: 99999 };
+  };
+
+  const getSkinOverride = (skinId: string, baseColor: number, baseFlameColor: number) => {
+    switch (skinId) {
+      case 'magma_red':
+        return { color: 0xff2222, flameColor: 0xff5500 };
+      case 'diamond_silver':
+        return { color: 0xe2e8f0, flameColor: 0xa5f3fc };
+      case 'midnight_obsidian':
+        return { color: 0x090d16, flameColor: 0xa855f7 };
+      case 'emerald_gold':
+        return { color: 0x10b981, flameColor: 0xeab308 };
+      default:
+        return { color: baseColor, flameColor: baseFlameColor };
+    }
+  };
+
+  const updateAchievementProgress = (id: string, amount: number) => {
+    setAchievements(prev => {
+      const updated = prev.map(ach => {
+        if (ach.id === id && !ach.completed) {
+          const newCurrent = Math.min(ach.target, ach.current + amount);
+          const completed = newCurrent >= ach.target;
+          if (completed && !ach.completed) {
+            triggerComicTextPop('🏆 업적 완수!', '#22c55e');
+            showHUDNotification('업적 수당 갱신!', `[${ach.name}] 업적 조건을 완수했습니다!`);
+          }
+          return { ...ach, current: newCurrent, completed };
+        }
+        return ach;
+      });
+      localStorage.setItem('anime_achievements', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // Load Leaderboard
   useEffect(() => {
     const cached = localStorage.getItem('kart_rider_leaderboard');
@@ -213,6 +392,10 @@ export default function App() {
 
   const currentKart = KARTS.find(k => k.id === selectedKartId) || KARTS[0];
   const currentMap = MAPS.find(m => m.id === selectedMapId) || MAPS[0];
+
+  const activeSkin = getSkinOverride(selectedSkinColor, currentKart.color, currentKart.flameColor);
+  const activeKartColor = activeSkin.color;
+  const activeKartFlameColor = activeSkin.flameColor;
 
   // --- Network Event Listeners & Setups ---
   const handleHostCreate = () => {
@@ -267,6 +450,7 @@ export default function App() {
     setLatestMultiplayerOutcomes([]);
 
     const cleanCode = roomIdInput.trim().toUpperCase();
+    setRoomIdLive(cleanCode);
     const netManager = new PeerNetworkManager(playerNameInput);
     netManagerRef.current = netManager;
 
@@ -509,12 +693,56 @@ export default function App() {
             engineRef.current.cleanup();
           }
 
+          // Compute ghost configuration if selected
+          let ghostConfigParam = undefined;
+          if (selectedGhostMode !== 'none') {
+            let targetMs = 60000; // default 60s
+            let colorHex = 0x22d3ee; // cyan for my best
+            
+            if (selectedGhostMode === 'my_best') {
+              const personalBest = bestTimes[currentMap.id];
+              targetMs = personalBest ? personalBest.timeMs : 75000;
+              colorHex = 0x22d3ee; // cyan
+            } else if (selectedGhostMode === 'friend_ghost') {
+              const pTimes: Record<string, number> = {
+                neon_sky_way: 63500,
+                cyberspace_tunnel: 74200,
+                cosmic_highway: 81100,
+                lava_crevice: 71500,
+                frozen_glacier: 76800,
+              };
+              targetMs = pTimes[currentMap.id] || 75000;
+              colorHex = 0xd946ef; // magenta/pink
+            } else if (selectedGhostMode === 'rival_1st') {
+              const pTimes: Record<string, number> = {
+                neon_sky_way: 52000,
+                cyberspace_tunnel: 61000,
+                cosmic_highway: 69000,
+                lava_crevice: 58000,
+                frozen_glacier: 64000,
+              };
+              targetMs = pTimes[currentMap.id] || 55000;
+              colorHex = 0xeab308; // gorgeous gold
+            }
+            
+            // Adjust factor according to gameMode lap multiplier limits
+            const baseLaps = 3;
+            const activeLaps = gameMode === 'time_attack' ? 1 : gameMode === 'ten_laps' ? 10 : 3;
+            targetMs = Math.round(targetMs * (activeLaps / baseLaps));
+
+            ghostConfigParam = {
+              isGhost: true,
+              targetTimeMs: targetMs,
+              ghostColorHex: colorHex
+            };
+          }
+
           engineRef.current = new GameEngine(
             canvasContainerRef.current,
             currentMap,
-            currentKart.color,
-            currentKart.flameColor,
-            0xfacc15,
+            activeKartColor,
+            activeKartFlameColor,
+            selectedGhostMode !== 'none' ? (ghostConfigParam?.ghostColorHex || 0xfacc15) : 0xfacc15,
             currentKart.stats,
             (lap) => {
               setCurrentLap(lap);
@@ -544,7 +772,9 @@ export default function App() {
             () => {
               triggerComicTextPop('CRASH!', '#ef4444');
               showHUDNotification('충돌 발생!', '트랩 타격 또는 외벽 충돌로 속도가 저하됩니다.');
-            }
+            },
+            ghostConfigParam,
+            gameMode
           );
 
           if (gameMode === 'time_attack') {
@@ -586,10 +816,80 @@ export default function App() {
     const mils = Math.floor((finalTime % 1000) / 10);
     const timeStr = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${mils.toString().padStart(2, '0')}`;
 
+    // Compute XP progressions & levels
+    const earnedXp = 45;
+    let finalLvl = level;
+    let finalXp = xp + earnedXp;
+    let lvlUpAlertStr = '';
+    const xpRequired = level * 120;
+    
+    if (finalXp >= xpRequired) {
+      finalXp -= xpRequired;
+      finalLvl += 1;
+      const lvlUpBonus = finalLvl * 150;
+      setGold(prev => prev + lvlUpBonus);
+      lvlUpAlertStr = `🎉 LEVEL UP! Lvl. ${finalLvl} 등급으로 특별 승격 (+${lvlUpBonus} Gold 수당 지급!)`;
+      triggerComicTextPop('LEVEL UP!', '#22c55e');
+      showHUDNotification('LEVEL UP!', `Lv. ${finalLvl} 드라이버 등급으로 승격되었습니다!`);
+    }
+    setLevel(finalLvl);
+    setXp(finalXp);
+
+    // Compute Rank Points (RP) Gained
+    const earnedRp = playerWon ? 35 : 12;
+    setRankPoints(prev => prev + earnedRp);
+
+    // Record calculations & comparison vs previous personal bests
+    const mapId = currentMap.id;
+    const prevBestObj = bestTimes[mapId];
+    let recordText = '';
+    const todayStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\s/g, '').slice(0, -1);
+    
+    if (!prevBestObj || finalTime < prevBestObj.timeMs) {
+      const newBestRecord = {
+        timeMs: finalTime,
+        timeStr: timeStr,
+        date: todayStr
+      };
+      setBestTimes(prev => {
+        const u = { ...prev, [mapId]: newBestRecord };
+        localStorage.setItem('anime_best_times', JSON.stringify(u));
+        return u;
+      });
+
+      if (prevBestObj) {
+        const deltaSec = ((prevBestObj.timeMs - finalTime) / 1000).toFixed(2);
+        const deltaPct = (((prevBestObj.timeMs - finalTime) / prevBestObj.timeMs) * 100).toFixed(1);
+        recordText = `⚡ 최고기록 경신! 이전 대비 -${deltaSec}초 단축 (-${deltaPct}% 향상!) ⚡`;
+      } else {
+        recordText = `✨ 첫 완주 공식 기록 등록 완료! [${timeStr}] ✨`;
+      }
+    } else {
+      const deltaSec = ((finalTime - prevBestObj.timeMs) / 1000).toFixed(2);
+      const deltaPct = (((finalTime - prevBestObj.timeMs) / prevBestObj.timeMs) * 100).toFixed(1);
+      recordText = `🐢 최고 기록 대비 +${deltaSec}초 지연 (+${deltaPct}% 격차) 🐢`;
+    }
+
+    // Trigger achievements increments
+    try {
+      updateAchievementProgress('maps_cleared', 1);
+      updateAchievementProgress('drift_count', 4);
+      updateAchievementProgress('use_booster', 3);
+      if (currentMap.id === 'neon_sky_way' && finalTime < 65000) {
+        updateAchievementProgress('time_under_65', 1);
+      }
+    } catch (err) {
+      console.error('Achievements update error:', err);
+    }
+
     setFinishStats({
       playerWon,
       finalTimeStr: timeStr,
-      earnedGold: finalGoldAwarded
+      earnedGold: finalGoldAwarded,
+      earnedXp: earnedXp,
+      levelUpAward: lvlUpAlertStr,
+      earnedRp: earnedRp,
+      recordComparisonText: recordText
     });
 
     setGold(prev => prev + finalGoldAwarded);
@@ -616,7 +916,6 @@ export default function App() {
         ten_laps: '10바퀴 레이스',
         super_nitro: '무제한 부스터'
       };
-      const todayStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\s/g, '').slice(0, -1);
       
       const newPlayerRecord = {
         id: `player-${Date.now()}`,
@@ -737,6 +1036,7 @@ export default function App() {
       setDrawnKart(null);
       setDrawRefund(false);
       setGold(prev => prev - 100);
+      updateAchievementProgress('gacha_spins', 1);
 
       let counter = 0;
       const interval = setInterval(() => {
@@ -987,23 +1287,29 @@ export default function App() {
                 <span className="uppercase text-white font-mono">{controlMode === 'keyboard' ? 'PC 키보드 모드' : '모바일 터치 모드'}</span>
               </button>
 
-              <div className="flex items-center space-x-3 bg-slate-900/90 border-2 border-slate-800 p-2 rounded-2xl shadow-lg">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-pink-500 to-rose-500 flex items-center justify-center text-white font-bold shadow-md">
-                  <Trophy size={15} />
+              <div className="flex items-stretch bg-slate-900/95 border-2 border-slate-800 p-2 text-white p-2 border-2 p-2.5 rounded-2xl shadow-xl space-x-3">
+                <div className="flex flex-col justify-between items-center rounded-xl bg-gradient-to-tr from-indigo-700 to-violet-600 p-2 text-white font-black text-center min-w-[50px] shadow-md border border-violet-500/20">
+                  <span className="text-[8px] uppercase opacity-75 font-mono">LEVEL</span>
+                  <span className="text-md leading-none mt-0.5">{level}</span>
+                  <span className="text-[7.5px] bg-slate-950/40 px-1 py-0.5 rounded mt-1.5 font-mono">{Math.floor((xp / (level * 120)) * 100)}%</span>
                 </div>
-                <div className="text-left font-mono">
+                <div className="text-left font-mono flex flex-col justify-center">
+                  <div className="text-[8.5px] text-pink-400 font-extrabold flex items-center space-x-1.5 mb-0.5 select-none">
+                    <span className="bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 rounded">🏷️ {selectedTitle}</span>
+                    <span className="bg-violet-500/15 border border-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded">{getTierInfo(rankPoints).icon} {getTierInfo(rankPoints).name}</span>
+                  </div>
                   <div className="text-[10px] text-gray-400 font-bold uppercase flex items-center">
                     <User size={10} className="mr-1 text-pink-500" />
                     <input 
                       type="text" 
                       value={playerNameInput}
                       onChange={(e) => setPlayerNameInput(e.target.value)}
-                      className="bg-transparent text-white outline-none border-b border-dashed border-pink-500/40 focus:border-pink-500 font-semibold py-0.5 text-xs w-28"
+                      className="bg-transparent text-white outline-none border-b border-dashed border-pink-500/40 focus:border-pink-500 font-semibold py-0.5 text-xs w-28 font-sans"
                       placeholder="라이더 이름"
                     />
                   </div>
-                  <div className="flex items-center text-yellow-400 font-black text-sm">
-                    <Coins className="mr-1 text-yellow-400" size={13} />
+                  <div className="flex items-center text-yellow-400 font-black text-xs leading-none mt-1">
+                    <Coins className="mr-1 text-yellow-400" size={12} />
                     <span>{gold} Gold</span>
                   </div>
                 </div>
@@ -1081,6 +1387,24 @@ export default function App() {
                       <div className="text-white text-xs font-black">보유 카트바디 차고</div>
                       <div className="text-[9.5px] text-gray-400 font-medium leading-none mt-1">획득한 기체 교체 피팅</div>
                     </div>
+                  </button>
+
+                  {/* Button 4.5: Profiles, Rankings & Achievements */}
+                  <button
+                    onClick={() => { triggerAudioInit(); setActiveMenuTab('rankings'); }}
+                    className="group relative w-full p-4.5 p-4 rounded-2xl bg-gradient-to-br from-slate-900/90 to-slate-950/90 border-2 border-slate-800 hover:border-violet-500 transition-all cursor-pointer flex items-center space-x-3.5 shadow-lg hover:scale-[1.02] text-left"
+                  >
+                    <div className="w-12 h-12 rounded-xl bg-violet-500/10 text-violet-400 flex items-center justify-center text-2xl shadow border border-violet-500/20 group-hover:scale-110 transition-transform">
+                      🏆
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-violet-400 font-extrabold uppercase tracking-wide">LEAGUE RANKINGS</div>
+                      <div className="text-white text-xs font-black">시즌 랭크 & 업적 달성</div>
+                      <div className="text-[9.5px] text-gray-400 font-medium leading-none mt-1">티어 상태, 전적 비교, 고스트 가이드</div>
+                    </div>
+                    {achievements.some(a => a.completed && !a.rewardClaimed) && (
+                      <span className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-rose-500 animate-pulse" />
+                    )}
                   </button>
 
                   {/* Button 5: Driving guide */}
@@ -1385,7 +1709,7 @@ export default function App() {
                 <div className="flex justify-between items-center border-b border-slate-800 pb-3 mb-4">
                   <div className="flex items-center space-x-2">
                     <span className="text-xl">
-                      {activeMenuTab === 'gacha' ? '🎰' : activeMenuTab === 'maps' ? '🗺️' : activeMenuTab === 'modes' ? '🔥' : activeMenuTab === 'garage' ? '🎒' : '📔'}
+                      {activeMenuTab === 'gacha' ? '🎰' : activeMenuTab === 'maps' ? '🗺️' : activeMenuTab === 'modes' ? '🔥' : activeMenuTab === 'garage' ? '🎒' : activeMenuTab === 'rankings' ? '🏆' : '📔'}
                     </span>
                     <h3 className="text-md font-black text-white uppercase tracking-wider">
                       {activeMenuTab === 'gacha' && '카트 캡슐 행운상자 슈터 (Gacha Capsule Shop)'}
@@ -1393,6 +1717,7 @@ export default function App() {
                       {activeMenuTab === 'modes' && '게임 대결 경기 규칙 설정 (Setup Game Rules)'}
                       {activeMenuTab === 'garage' && '내 차고 기어 장비 보관소 (My Cart Garage)'}
                       {activeMenuTab === 'guide' && '초보자 레이서 드라이빙 가이드 (Guidebook)'}
+                      {activeMenuTab === 'rankings' && '시즌 랭킹 요약 및 드라이버 업적 훈련원 (Profiles & Season League)'}
                     </h3>
                   </div>
                   <button 
@@ -1573,6 +1898,10 @@ export default function App() {
                     {MAPS.map((m) => {
                       const isSelected = selectedMapId === m.id;
                       const difficultyColor = (m.difficulty === '★★★' || m.difficulty === '어려움') ? 'text-red-500' : (m.difficulty === '★★☆' || m.difficulty === '중') ? 'text-yellow-400' : 'text-green-450 text-green-400';
+                      const recCount = mapRecommendations[m.id] || 0;
+                      const personalBest = bestTimes[m.id];
+                      const bestTimeStr = personalBest ? personalBest.timeStr : '기록 없음';
+
                       return (
                         <button
                           key={m.id}
@@ -1580,13 +1909,12 @@ export default function App() {
                             triggerAudioInit();
                             setSelectedMapId(m.id);
                           }}
-                          className={`relative flex flex-col justify-between text-left p-4 bg-slate-950 rounded-2xl border-2 transition-all min-h-[190px] cursor-pointer group hover:-translate-y-0.5 ${
+                          className={`relative flex flex-col justify-between text-left p-4 bg-slate-950 rounded-2xl border-2 transition-all min-h-[220px] cursor-pointer group hover:-translate-y-0.5 ${
                             isSelected 
                               ? 'border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.35)] bg-cyan-950/15' 
                               : 'border-slate-800/80 hover:border-slate-600 hover:bg-slate-900'
                           }`}
                         >
-                          {/* Colored background layout element */}
                           <div className={`absolute top-0 right-0 w-20 h-20 rounded-full blur-xl opacity-3 group-hover:scale-125 transition-all bg-${m.themeColor}/10`} />
 
                           <div className="z-10 w-full">
@@ -1594,30 +1922,106 @@ export default function App() {
                               <span className={`text-[8.5px] font-mono font-bold tracking-widest uppercase ${difficultyColor}`}>
                                 난이도: {m.difficulty}
                               </span>
+                              
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerAudioInit();
+                                  setMapRecommendations(prev => {
+                                    const updated = { ...prev, [m.id]: (prev[m.id] || 0) + 1 };
+                                    localStorage.setItem('anime_map_recs', JSON.stringify(updated));
+                                    return updated;
+                                  });
+                                  showHUDNotification('수려한 코스 추천 👍', `[${m.name.split(' (')[0]}] 트랙에 응원의 에너지를 보냈습니다!`);
+                                }}
+                                className="text-[10px] text-pink-400 font-extrabold flex items-center space-x-1 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/20 px-1.5 py-0.5 rounded transition-colors"
+                                title="코스 추천하기"
+                              >
+                                <span>👍</span>
+                                <span className="font-mono">{recCount}</span>
+                              </div>
                             </div>
+
                             <h4 className="text-sm font-black text-white group-hover:text-cyan-300 transition-colors leading-snug">
                               {m.name.split(' (')[0]}
                             </h4>
-                            <p className="text-[10.5px] text-slate-400 mt-2 lines-clamp-4 leading-normal font-sans font-medium">
+
+                            <div className="text-[9.5px] text-emerald-400 font-bold font-mono mt-1 flex items-center">
+                              <span className="mr-1">⏱️ Best:</span>
+                              <span className="bg-emerald-950/35 border border-emerald-500/20 px-1 py-0.2 rounded">{bestTimeStr}</span>
+                            </div>
+
+                            <p className="text-[10px] text-slate-400 mt-2.5 line-clamp-3 leading-relaxed font-sans">
                               {m.description}
                             </p>
                           </div>
 
-                          <div className="mt-4 flex items-center justify-between z-10 w-full pt-2 border-t border-white/5">
+                          <div className="mt-4 flex items-center justify-between z-10 w-full pt-1.5 border-t border-white/5">
                             <span className="text-[9px] text-slate-500 font-semibold tracking-wider font-mono">3D CATMULL</span>
                             {isSelected ? (
                               <span className="bg-cyan-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded shadow">
-                                PREPARED
+                                READY
                               </span>
                             ) : (
-                              <span className="text-[9px] text-gray-500 font-bold group-hover:text-cyan-400/80 transition-colors flex items-center">
-                                선택하기 <ChevronRight size={10} className="ml-0.5" />
+                              <span className="text-[9px] text-gray-400 font-bold group-hover:text-cyan-400/80 transition-colors flex items-center">
+                                선택 <ChevronRight size={10} className="ml-0.5" />
                               </span>
                             )}
                           </div>
                         </button>
                       );
                     })}
+                  </div>
+
+                  {/* Dynamic Ghost Partner Setup Dock */}
+                  <div className="mt-5.5 mt-5 bg-slate-950/70 p-4 border border-slate-800 rounded-2xl">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <span className="text-sm">👻</span>
+                      <h4 className="text-xs font-black uppercase tracking-wider text-cyan-400 font-mono">
+                        타임어택 고스트 드라이버 섀도우 연동 매칭 서비스 (Time Attack Ghost Clone Systems)
+                      </h4>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mb-3.5 leading-snug font-sans">
+                      선택한 트랙을 주행할 때, 최상급 페이스를 보장하는 유령 주행(Ghost) 섀도우 봇을 소환하여 코너링 궤적과 부스터 타이밍을 안전하게 실시간 전송합니다.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      {[
+                        { id: 'none', label: '고스트 비활성 (No Ghost)', desc: '섀도우 고스트 연동을 취소하고 일반 AI 라이벌과 플레이.', icon: '❌', theme: 'border-slate-850 hover:border-slate-700' },
+                        { id: 'my_best', label: '내 최고기록 클론 (My Best)', desc: `내 예전 베스트 주행 대결 (${bestTimes[selectedMapId]?.timeStr || '기록 없음'})`, icon: '👤', theme: 'border-cyan-500/20 hover:border-cyan-400/40' },
+                        { id: 'friend_friend', label: '친구 공인 기록 (Friend Best)', desc: '클럽 서킷 최고 속도를 지닌 절친 주행 데이터 싱크', icon: '👥', theme: 'border-pink-500/20 hover:border-pink-400/40' },
+                        { id: 'rival_top', label: '전설 1위 유령 기록 (1st Record)', desc: '서킷 월드 클래스 랭킹 1위 드라이버의 절대 한계선 라인', icon: '👑', theme: 'border-yellow-500/20 hover:border-yellow-400/40' }
+                      ].map((opt) => {
+                        // Map internal ghostConfig strings safely
+                        const optionIdMapped = opt.id === 'friend_friend' ? 'friend_ghost' : opt.id === 'rival_top' ? 'rival_1st' : opt.id;
+                        const isGhostActive = selectedGhostMode === optionIdMapped;
+                        return (
+                          <button
+                            key={opt.id}
+                            onClick={() => {
+                              triggerAudioInit();
+                              setSelectedGhostMode(optionIdMapped as any);
+                              showHUDNotification('고스트 드라이버 동기화', `[${opt.label}] 패턴 섀도우가 다음 주행에 준비되었습니다!`);
+                            }}
+                            className={`p-2.5 rounded-xl bg-slate-900 border-2 text-left cursor-pointer transition-all ${
+                              isGhostActive 
+                                ? 'border-cyan-400 shadow-[0_0_10px_rgba(34,211,238,0.15)] bg-cyan-950/10' 
+                                : opt.theme
+                            }`}
+                          >
+                            <div className="flex items-center space-x-1 mb-1">
+                              <span className="text-xs">{opt.icon}</span>
+                              <span className={`text-[10.5px] font-black ${isGhostActive ? 'text-cyan-400' : 'text-white'}`}>
+                                {opt.label}
+                              </span>
+                            </div>
+                            <p className="text-[9px] text-gray-400 leading-normal">
+                              {opt.desc}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </motion.div>
               )}
@@ -2129,6 +2533,553 @@ export default function App() {
                       V 또는 C 키를 누르면 비주얼 3D 시점(아이소메트릭 / 체이스백 / 1인칭) 변경이 가능합니다.
                     </div>
                   </div>
+                </motion.div>
+              )}
+
+              {/* === TAB 5: LEAGUE RANKINGS, PROFILE, MISSIONS (시즌 랭크 전적실) === */}
+              {activeMenuTab === 'rankings' && (
+                <motion.div
+                  key="rankings"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-slate-900/90 border-2 border-slate-700/60 rounded-3xl p-5 shadow-xl w-full flex flex-col font-sans"
+                >
+                  {/* Top inner navigator tab structure */}
+                  <div className="flex border-b border-slate-800 pb-3 mb-5 space-x-1 sm:space-x-4">
+                    <button
+                      onClick={() => { triggerAudioInit(); setRankingsSubTab('profile'); }}
+                      className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+                        rankingsSubTab === 'profile'
+                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/20'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span>👤</span>
+                      <span>내 정보 & 가죽 커스터마이징</span>
+                    </button>
+                    <button
+                      onClick={() => { triggerAudioInit(); setRankingsSubTab('leaderboard'); }}
+                      className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+                        rankingsSubTab === 'leaderboard'
+                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/20'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span>🏆</span>
+                      <span>시즌 월간 랭킹 실록</span>
+                    </button>
+                    <button
+                      onClick={() => { triggerAudioInit(); setRankingsSubTab('achievements'); }}
+                      className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center space-x-1.5 relative ${
+                        rankingsSubTab === 'achievements'
+                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/20'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span>📜</span>
+                      <span>훈련 미션 및 업적 수당</span>
+                      {achievements.some(a => a.completed && !a.rewardClaimed) && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full animate-pulse" />
+                      )}
+                    </button>
+                  </div>
+
+                  {/* SUB-TAB 1: PROFILE MANAGEMENT */}
+                  {rankingsSubTab === 'profile' && (
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-6 font-sans">
+                      
+                      {/* Left: Player Profile Details */}
+                      <div className="md:col-span-4 bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center space-x-3 mb-4">
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center text-white text-xl font-black shadow-md border border-white/10">
+                              {playerNameInput.slice(0, 1) || 'R'}
+                            </div>
+                            <div>
+                              <div className="flex items-center space-x-1">
+                                <span className="bg-indigo-600/30 text-indigo-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-500/20 uppercase">LV.{level}</span>
+                                <span className="bg-violet-600/30 text-violet-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-violet-500/25">{getTierInfo(rankPoints).icon} {getTierInfo(rankPoints).name}</span>
+                              </div>
+                              <h4 className="text-sm font-black text-white mt-0.5">{playerNameInput}</h4>
+                            </div>
+                          </div>
+
+                          {/* XP Bar */}
+                          <div className="bg-slate-900 border border-slate-800 p-3.5 rounded-xl mb-4 text-xs">
+                            <div className="flex justify-between items-center text-[10.5px] font-bold text-gray-400 mb-1.5 uppercase font-mono">
+                              <span>Driver XP Progress</span>
+                              <span>{xp} / {level * 120} XP ({Math.floor((xp / (level * 120)) * 100)}%)</span>
+                            </div>
+                            <div className="w-full bg-slate-950 border border-slate-850 h-3.5 rounded-full overflow-hidden p-0.5">
+                              <div 
+                                className="bg-gradient-to-r from-cyan-400 via-indigo-600 via-indigo-550 to-pink-505 h-full rounded-full transition-all duration-500 shadow animate-pulse"
+                                style={{ width: `${Math.min(100, (xp / (level * 120)) * 100)}%` }}
+                              />
+                            </div>
+                            <p className="text-[9.5px] text-slate-500 mt-2 leading-snug font-sans flex items-start">
+                              주행 완수 시 45 XP가 가산됩니다. 레벨 업 시 드라이버 특별 장려 칭호 및 금화 수당이 지급됩니다.
+                            </p>
+                          </div>
+
+                          {/* Stat summaries */}
+                          <div className="grid grid-cols-2 gap-2 text-xs">
+                            <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/60">
+                              <div className="text-[9.5px] text-gray-400">누적 골드 잔고</div>
+                              <div className="text-white font-mono font-black text-xs mt-0.5">{gold} Gold</div>
+                            </div>
+                            <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/60">
+                              <div className="text-[9.5px] text-gray-400">배틀 레이팅 RP</div>
+                              <div className="text-white font-mono font-black text-xs mt-0.5">{rankPoints} RP</div>
+                            </div>
+                            <div className="bg-slate-900/60 p-2.5 rounded-xl border border-slate-800/60 col-span-2">
+                              <span className="text-[9.5px] text-gray-400 font-bold block mb-1">👑 드라이버 액티브 호칭 (Equipped Title)</span>
+                              <span className="text-pink-400 font-extrabold text-[11px] block bg-pink-500/10 border border-pink-500/20 px-2.5 py-1 rounded-lg text-center font-sans">
+                                🎖️ {selectedTitle}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Reset simulator data */}
+                        <div className="mt-5 pt-3.5 border-t border-slate-850">
+                          <button
+                            onClick={() => {
+                              if (confirm('모든 랭킹 점수, 스킨, 레벨, 최고 기록을 초기화하시겠습니까? (로컬 데이터 리셋)')) {
+                                localStorage.clear();
+                                window.location.reload();
+                              }
+                            }}
+                            className="w-full py-2 rounded-xl text-[10px] text-slate-500 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 border border-slate-850 font-black tracking-widest uppercase transition-colors cursor-pointer"
+                          >
+                            초기 훈련생 데이터 완전 리셋 (Reset Data)
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Right: Titles and Skins customizer */}
+                      <div className="md:col-span-8 flex flex-col space-y-5">
+                        
+                        {/* Title list */}
+                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
+                          <h4 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 uppercase tracking-widest font-mono mb-2.5">
+                            🎖️ 내가 장착 가능한 드라이버 고유 칭호 (Rider Titles)
+                          </h4>
+                          <span className="text-[10px] text-slate-400 leading-normal block mb-4 font-sans">
+                            업적 및 미션을 충실히 훈련하면 희귀 칭호들이 잠금해제됩니다. 아래 칭호를 장착하여 로비에 즉시 전시하세요!
+                          </span>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            {[
+                              { id: '초보 레이서', label: '초보 레이서', desc: '초기 무료 제공' },
+                              { id: '기동엔진 챔프', label: '기동엔진 챔프', desc: '기본 업적 보상' },
+                              { id: '은하계 타키온', label: '은하계 타키온', desc: '타임 레이싱 훈련생' },
+                              { id: '다이아 정복자', label: '다이아 정복자', desc: '최상위 리그 타이틀' },
+                              { id: '드리프트 달인', label: '드리프트 달인', desc: '드리프트 훈련 특화' },
+                              { id: '슈퍼 캡슐 럭키맨', label: '슈퍼 캡슐 럭키맨', desc: '캡슐 가챠 애호가 전용' }
+                            ].map((tit) => {
+                              const isOwned = unlockedTitles.includes(tit.id);
+                              const isEquipped = selectedTitle === tit.id;
+                              return (
+                                <div 
+                                  key={tit.id}
+                                  className={`p-2.5 bg-slate-900 border rounded-xl flex flex-col justify-between transition-colors ${
+                                    isEquipped 
+                                      ? 'border-pink-500 bg-pink-955/10 bg-pink-950/20' 
+                                      : isOwned ? 'border-slate-800 hover:border-slate-700' : 'border-slate-900/45 opacity-55'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="text-[11px] font-black text-white">{tit.label}</div>
+                                    <div className="text-[9px] text-gray-500 mt-0.5">{tit.desc}</div>
+                                  </div>
+                                  <div className="mt-2">
+                                    {isEquipped ? (
+                                      <span className="text-[9px] text-pink-400 font-extrabold flex items-center justify-center bg-pink-500/10 py-1 border border-pink-500/20 rounded-md font-sans">
+                                        장착완료 (ACTIVE)
+                                      </span>
+                                    ) : isOwned ? (
+                                      <button
+                                        onClick={() => {
+                                          triggerAudioInit();
+                                          setSelectedTitle(tit.id);
+                                          showHUDNotification('칭호 변경 완료', `[🏷️ ${tit.label}] 호칭을 장비했습니다.`);
+                                        }}
+                                        className="w-full py-1 bg-slate-850 hover:bg-slate-800 text-[9px] font-extrabold rounded-md text-white border border-slate-750 transition-colors cursor-pointer"
+                                      >
+                                        장착하기 (Equip)
+                                      </button>
+                                    ) : (
+                                      <span className="text-[9px] text-slate-600 block text-center py-1 bg-slate-950/60 rounded border border-transparent">
+                                        🔒 잠겨있음
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Skin customization list */}
+                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
+                          <h4 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-amber-405 to-amber-400 uppercase tracking-widest font-mono mb-2.5">
+                            🎨 3D 카트바디 특수 도색 가죽 스킨 (Chassis Coating Visuals)
+                          </h4>
+                          <span className="text-[10px] text-slate-400 leading-normal block mb-4 font-sans">
+                            차고의 카트 바디 실시간 도색을 변경하는 고농도 특수 알루미늄 나노 입자 스킨 시스템입니다. 게임 실행 시 카트에 즉각 반영됩니다!
+                          </span>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                            {[
+                              { id: 'default', label: '오리지널 엔진', desc: '고유 카트 기본 배색', hex: '#6366f1' },
+                              { id: 'magma_red', label: '화염 마그마 레드', desc: '붉은 화산 특수 도장', hex: '#ef4444' },
+                              { id: 'diamond_silver', label: '다이아 플래티넘', desc: '백금 실버 실린더 도장', hex: '#cbd5e1' },
+                              { id: 'midnight_obsidian', label: '미드나잇 흑옵', desc: '매혹적인 밤하늘 흑색', hex: '#090d16' },
+                              { id: 'emerald_gold', label: '에메랄드 포레스트', desc: '신비의 옥색 골드 배색', hex: '#10b981' }
+                            ].map((sk) => {
+                              const isOwned = unlockedSkins.includes(sk.id);
+                              const isEquipped = selectedSkinColor === sk.id;
+                              return (
+                                <div 
+                                  key={sk.id}
+                                  className={`p-2 bg-slate-900 border rounded-xl flex flex-col justify-between transition-colors ${
+                                    isEquipped 
+                                      ? 'border-amber-400 bg-amber-950/5' 
+                                      : isOwned ? 'border-slate-850 hover:border-slate-700' : 'border-slate-900/40 opacity-55'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex items-center space-x-1 mb-1">
+                                      <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ backgroundColor: sk.hex }} />
+                                      <span className="text-[10px] font-black text-white">{sk.label}</span>
+                                    </div>
+                                    <div className="text-[8px] text-gray-500 leading-snug">{sk.desc}</div>
+                                  </div>
+                                  <div className="mt-3">
+                                    {isEquipped ? (
+                                      <span className="text-[8px] text-amber-500 font-extrabold flex items-center justify-center bg-amber-500/10 py-1 border border-amber-500/20 rounded-md font-sans">
+                                        ACTIVE
+                                      </span>
+                                    ) : isOwned ? (
+                                      <button
+                                        onClick={() => {
+                                          triggerAudioInit();
+                                          setSelectedSkinColor(sk.id);
+                                          showHUDNotification('스킨 변경 완료', `[🎨 ${sk.label}] 컬러 배색을 기체에 동사 연동 완료!`);
+                                        }}
+                                        className="w-full py-1 bg-slate-850 hover:bg-slate-800 hover:border-amber-500 text-[8px] font-extrabold rounded-md text-white border border-slate-750 transition-colors cursor-pointer font-sans"
+                                      >
+                                        도장하기
+                                      </button>
+                                    ) : (
+                                      <span className="text-[8px] text-slate-600 block text-center py-1 bg-slate-950/60 rounded border border-transparent">
+                                        🔒 잠겨있음
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SUB-TAB 2: LEADERBOARD MATRIX */}
+                  {rankingsSubTab === 'leaderboard' && (
+                    <div className="flex flex-col space-y-4 font-sans">
+                      
+                      {/* Sub-tab Filter Header */}
+                      <div className="flex bg-slate-950 border border-slate-850 p-1.5 rounded-2xl space-x-1.5 self-start">
+                        {[
+                          { id: 'global', label: '🏆 월간 리그 전체 랭킹', icon: '🌍' },
+                          { id: 'friends', label: '👥 실시간 친구 랭크', icon: '👦' },
+                          { id: 'time_attack', label: '🗺️ 트랙 타임어택 랭킹', icon: '⏱️' },
+                          { id: 'season', label: '🔥 시즌 주간 초기화 상태', icon: '♻️' }
+                        ].map((fil) => {
+                          const isFilterActive = rankingFilter === fil.id;
+                          return (
+                            <button
+                              key={fil.id}
+                              onClick={() => { triggerAudioInit(); setRankingFilter(fil.id as any); }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center space-x-1 ${
+                                isFilterActive 
+                                  ? 'bg-slate-850 text-white border border-slate-750' 
+                                  : 'text-gray-400 hover:text-white hover:bg-slate-900/50'
+                              }`}
+                            >
+                              <span>{fil.icon}</span>
+                              <span>{fil.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* Display filters depending on selection */}
+                      {rankingFilter === 'global' && (
+                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800 font-sans">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-2 mb-3.5">
+                            <span className="text-[11px] text-pink-400 font-extrabold uppercase tracking-wide">GLOBAL USER LEAGUE (전교 유저 랭킹 리그)</span>
+                            <span className="text-[9.5px] text-gray-500 font-bold">1위부터 상위 최고 랭커 진열</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto normal-scrollbar pr-1">
+                            {[
+                              { rank: 1, name: '은하계엔진킹_지호', title: '황제 드라이버', rp: 5240, level: 32, kart: '아발란체' },
+                              { rank: 2, name: '드리프트전설', title: '드리프트 달인', rp: 4910, level: 29, kart: '세이버 익스트림' },
+                              { rank: 3, name: '태양의질주', title: '은하계 타키온', rp: 4320, level: 27, kart: '솔리드 캐논' },
+                              { rank: 4, name: `${playerNameInput} (나)`, title: selectedTitle, rp: rankPoints, level: level, kart: currentKart.name.split(' (')[0], isMe: true },
+                              { rank: 5, name: '카트선생님', title: '초보 구원자', rp: 1450, level: 15, kart: '블루 스피너' },
+                              { rank: 6, name: '연습카딩구', title: '초보 레이서', rp: 820, level: 9, kart: '스타트 라인' }
+                            ].sort((a, b) => b.rp - a.rp).map((item, idx) => {
+                              const updatedIndex = idx + 1;
+                              const isMe = item.isMe;
+                              const medalColor = updatedIndex === 1 ? 'bg-amber-400 animate-pulse' : updatedIndex === 2 ? 'bg-slate-300' : updatedIndex === 3 ? 'bg-amber-600' : 'bg-slate-800';
+                              return (
+                                <div 
+                                  key={item.name}
+                                  className={`flex justify-between items-center p-3 rounded-xl border transition-colors ${
+                                    isMe 
+                                      ? 'border-pink-500 bg-pink-955/10 bg-pink-950/15' 
+                                      : 'border-slate-900 bg-slate-900/60'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-3">
+                                    <div className={`w-6 h-6 rounded-md ${medalColor} text-slate-950 font-black flex items-center justify-center text-xs shadow-sm`}>
+                                      {updatedIndex}
+                                    </div>
+                                    <div>
+                                      <div className="flex items-center space-x-1">
+                                        <span className="text-white text-xs font-black">{item.name}</span>
+                                        <span className="bg-slate-850 px-1 py-0.2 rounded text-[8.5px] text-pink-400 font-extrabold border border-white/5">{item.title}</span>
+                                      </div>
+                                      <div className="text-[9px] text-gray-400 font-mono mt-0.5">Lv.{item.level} ⬝ 기체: {item.kart}</div>
+                                    </div>
+                                  </div>
+                                  <div className="flex bg-slate-950 px-2.5 py-1 border border-slate-850 rounded-lg text-right min-w-[70px] justify-center items-center">
+                                    <div className="text-amber-422 font-mono font-black text-xs text-yellow-400">{item.rp} RP</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {rankingFilter === 'friends' && (
+                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800 font-sans">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-2 mb-3.5">
+                            <span className="text-[11px] text-cyan-400 font-extrabold uppercase tracking-wide">FRIENDS LEAGUE (실시간 절친 매칭 랭킹)</span>
+                            <span className="text-[9.5px] text-gray-500 font-bold">인기 드라이버 친우 리스트 정보</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {[
+                              { rank: 1, name: '엔진마스터_지훈', title: '은하계 타키온', rp: 1980, level: 16, online: true },
+                              { rank: 2, name: `${playerNameInput} (나)`, title: selectedTitle, rp: rankPoints, level: level, online: true, isMe: true },
+                              { rank: 3, name: '카트소라사랑', title: '초보 레이서', rp: 640, level: 7, online: false },
+                              { rank: 4, name: '우주핵폭탄민준', title: '초보 레이서', rp: 310, level: 4, online: true },
+                              { rank: 5, name: '꿈나무레이서서현', title: '초보 레이서', rp: 180, level: 3, online: false }
+                            ].sort((a, b) => b.rp - a.rp).map((item, idx) => {
+                              const updatedIndex = idx + 1;
+                              const isMe = item.isMe;
+                              return (
+                                <div 
+                                  key={item.name}
+                                  className={`flex justify-between items-center p-3 rounded-xl border ${
+                                    isMe 
+                                      ? 'border-pink-500 bg-pink-955/15 bg-pink-950/15' 
+                                      : 'border-slate-900 bg-slate-900/60'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-2.5">
+                                    <span className="text-gray-400 font-black font-mono text-xs w-4 text-center">{updatedIndex}</span>
+                                    <div>
+                                      <div className="flex items-center space-x-1.5">
+                                        <span className="text-white text-xs font-black">{item.name}</span>
+                                        <span className={`w-1.5 h-1.5 rounded-full ${item.online ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
+                                      </div>
+                                      <div className="text-[8.5px] text-gray-500 font-mono">Lv.{item.level} • {item.online ? '대기실 접속중' : '부재중 (로그아웃)'}</div>
+                                    </div>
+                                  </div>
+                                  <div className="text-xs font-mono font-bold text-gray-300">{item.rp} RP</div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {rankingFilter === 'time_attack' && (
+                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800 font-sans">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-2 mb-3.5">
+                            <span className="text-[11px] text-cyan-400 font-extrabold uppercase tracking-wide font-mono">MAP TIME ATTACK WORLD RECORDS ([{currentMap.name.split(' (')[0]}] 트랙 랭킹)</span>
+                            <span className="text-[9.5px] text-gray-500 font-bold">전용 타임어택 서킷 최강자 목록</span>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {[
+                              { rank: 1, name: '카트의전설신짱', time: '00:52.41', date: '2026.06.01' },
+                              { rank: 2, name: '스피드머신러', time: '01:01.14', date: '2026.06.03' },
+                              { rank: 3, name: `${playerNameInput} (나의 최고기록)`, time: bestTimes[currentMap.id]?.timeStr || '기록 없음', date: bestTimes[currentMap.id]?.date || '-', isMe: true },
+                              { rank: 4, name: '스핏선배민우', time: '01:14.50', date: '2025.12.28' },
+                              { rank: 5, name: '광속주행정복자', time: '01:21.80', date: '2026.04.14' }
+                            ].map((item, idx) => {
+                              const isMe = item.isMe;
+                              return (
+                                <div 
+                                  key={item.name}
+                                  className={`flex justify-between items-center p-3 rounded-xl border ${
+                                    isMe 
+                                      ? 'border-pink-500 bg-pink-955/15' 
+                                      : 'border-slate-900 bg-slate-900/60'
+                                  }`}
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-gray-500 font-bold font-mono text-xs w-4">{idx + 1}</span>
+                                    <div>
+                                      <div className="text-white text-xs font-black">{item.name}</div>
+                                      <div className="text-[8.5px] text-gray-500 font-mono">{item.date} 서킷 등록</div>
+                                    </div>
+                                  </div>
+                                  <p className="text-xs font-mono font-black text-indigo-400 bg-indigo-950/30 px-2 py-0.5 rounded border border-indigo-500/25 animate-pulse">
+                                    {item.time}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {rankingFilter === 'season' && (
+                        <div className="bg-slate-950/70 p-5 rounded-xl border border-slate-800 text-center flex flex-col items-center justify-center py-8 font-sans">
+                          <span className="text-4xl mb-3">♻️</span>
+                          <h4 className="text-sm font-black text-white uppercase tracking-wider mb-2">시즌 리그 주간/월간 타임테이블 스케줄러</h4>
+                          <p className="text-[10.5px] text-gray-400 max-w-md mx-auto leading-relaxed mb-4">
+                            매주 월요일 00:00에 실시간 전체 유저 및 맵별 최고 기록이 공식 초기화되며, 축적된 드라이버 배틀 레이팅(RP) 티어에 따라 기체 치장 칭호와 전교 공인 코인 보상이 격주로 우편 지급됩니다.
+                          </p>
+                          <div className="bg-slate-900 border border-slate-850 rounded-xl p-3 text-left w-full max-w-xs text-[10px] font-mono space-y-1.5 text-gray-400 mx-auto">
+                            <div className="flex justify-between text-white"><span>남은 정산 시간:</span> <span className="text-pink-400 font-extrabold">2일 14시간 52분</span></div>
+                            <div className="flex justify-between"><span>예상 달성 등급:</span> <span className="text-violet-400">{getTierInfo(rankPoints).name}</span></div>
+                            <div className="flex justify-between"><span>수령 가능 티어 보상:</span> <span className="text-yellow-400 font-extrabold">1,500 Gold + 한정판 스킨</span></div>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  )}
+
+                  {/* SUB-TAB 3: MISSIONS AND ACHIEVEMENTS */}
+                  {rankingsSubTab === 'achievements' && (
+                    <div className="flex flex-col space-y-4 font-sans">
+                      <div className="bg-slate-950/50 p-3 rounded-xl border border-slate-800">
+                        <span className="text-[11px] text-pink-400 font-extrabold uppercase block tracking-wider font-mono">⚔️ 드라이버 리그 승격 미션 및 특별 성과 성취</span>
+                        <span className="text-[10px] text-slate-400 leading-normal block mt-1">
+                          완수된 항목의 우측 [보상 수령] 단추를 누르면 골드와 타이틀 및 스킨이 인벤토리에 즉각 해금 배부됩니다! 
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {achievements.map((ach) => {
+                          const progressPct = Math.floor((ach.current / ach.target) * 100);
+                          return (
+                            <div 
+                              key={ach.id}
+                              className={`p-3.5 rounded-2xl border-2 transition-colors flex justify-between items-stretch bg-slate-950/90 ${
+                                ach.completed 
+                                  ? ach.rewardClaimed 
+                                    ? 'border-slate-850/80 opacity-70' 
+                                    : 'border-green-500 bg-green-950/5 shadow-[0_0_8px_rgba(34,197,94,0.1)]' 
+                                  : 'border-slate-850'
+                              }`}
+                            >
+                              <div className="flex flex-col justify-between flex-1 pr-4">
+                                <div>
+                                  <div className="flex items-center space-x-1.5 mb-1">
+                                    <span className="text-sm">{ach.completed ? '✅' : '⚙️'}</span>
+                                    <span className="text-xs font-black text-white">{ach.name}</span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400 leading-snug font-sans">
+                                    {ach.desc}
+                                  </p>
+                                </div>
+
+                                <div className="mt-3">
+                                  <div className="flex justify-between text-[9px] text-gray-500 font-mono font-semibold mb-1">
+                                    <span>훈련 진행도</span>
+                                    <span>{ach.current} / {ach.target} ({progressPct}%)</span>
+                                  </div>
+                                  <div className="w-full bg-slate-900 border border-slate-850 h-2 rounded-full overflow-hidden">
+                                    <div 
+                                      className={`h-full rounded-full transition-all duration-300 ${ach.completed ? 'bg-green-500' : 'bg-slate-600'}`}
+                                      style={{ width: `${Math.min(100, progressPct)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="w-[110px] bg-slate-900/60 p-2 border border-slate-850 rounded-xl flex flex-col justify-between text-center">
+                                <div className="text-[9.5px]">
+                                  <div className="text-gray-500 font-bold uppercase font-mono">REWARDS</div>
+                                  <span className="text-yellow-400 font-bold font-mono text-[10px] block mt-0.5">+{ach.rewardGold}G</span>
+                                  {ach.rewardTitle && <span className="text-pink-400 bg-pink-500/10 px-1 py-0.2 rounded text-[7.5px] block truncate mt-1">🏷️ {ach.rewardTitle}</span>}
+                                  {ach.rewardSkin && <span className="text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded text-[7.5px] block truncate mt-1">🎨 Skin 도색</span>}
+                                </div>
+
+                                <div className="mt-2.5 font-sans">
+                                  {ach.rewardClaimed ? (
+                                    <span className="text-[9px] text-gray-500 block text-center py-1 bg-slate-950 border border-transparent rounded-lg">
+                                      수령완료
+                                    </span>
+                                  ) : ach.completed ? (
+                                    <button
+                                      onClick={() => {
+                                        triggerAudioInit();
+                                        setGold(prev => prev + ach.rewardGold);
+                                        if (ach.rewardTitle) {
+                                          setUnlockedTitles(prev => {
+                                            const updated = prev.includes(ach.rewardTitle!) ? prev : [...prev, ach.rewardTitle!];
+                                            localStorage.setItem('anime_unlocked_titles', JSON.stringify(updated));
+                                            return updated;
+                                          });
+                                        }
+                                        if (ach.rewardSkin) {
+                                          setUnlockedSkins(prev => {
+                                            const updated = prev.includes(ach.rewardSkin!) ? prev : [...prev, ach.rewardSkin!];
+                                            localStorage.setItem('anime_unlocked_skins', JSON.stringify(updated));
+                                            return updated;
+                                          });
+                                        }
+                                        setAchievements(prev => {
+                                          const updated = prev.map(a => a.id === ach.id ? { ...a, rewardClaimed: true } : a);
+                                          localStorage.setItem('anime_achievements', JSON.stringify(updated));
+                                          return updated;
+                                        });
+                                        triggerComicTextPop('REWARD CLEARED!', '#10b981');
+                                        showHUDNotification('업적 특별 보상 획득!', `[${ach.rewardGold} Gold] 성취 수당을 정기 금고에 연동 배부했습니다!`);
+                                      }}
+                                      className="w-full py-1 bg-gradient-to-r from-emerald-500 to-green-500 text-white font-black hover:shadow-lg transition-all rounded-lg text-[10px] cursor-pointer"
+                                    >
+                                      보상 수령
+                                    </button>
+                                  ) : (
+                                    <span className="text-[9px] text-slate-655 text-slate-605 text-slate-600 block text-center py-1 bg-slate-950/30 border border-transparent rounded-lg">
+                                      진행중
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                 </motion.div>
               )}
 

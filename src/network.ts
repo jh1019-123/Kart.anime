@@ -38,6 +38,9 @@ export class PeerNetworkManager {
       
       this.peer = new Peer(peerId || '', {
         debug: 1, // Minimize warning logs to avoid console bloat
+        host: '0.peerjs.com',
+        port: 443,
+        secure: true,
         config: {
           iceServers: [
             { urls: 'stun:stun.l.google.com:19302' },

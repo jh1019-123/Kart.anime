@@ -755,6 +755,7 @@ export class GameEngine {
 
   cameraView: 'isometric' | 'chase' | 'first' = 'isometric';
   multiplayerKarts = new Map<string, { mesh: THREE.Group; wheels: THREE.Mesh[]; nozzle: THREE.Mesh }>();
+  ghostConfig?: { isGhost: boolean; targetTimeMs: number; ghostColorHex: number };
 
   // React Callbacks
   onLapChange: (lap: number) => void;
@@ -780,13 +781,17 @@ export class GameEngine {
     onItemPickup: () => void,
     onGameFinished: (playerWon: boolean, finalTime: number) => void,
     onAiCrashNotification: () => void,
-    onPlayerCrashNotification: () => void
+    onPlayerCrashNotification: () => void,
+    ghostConfig?: { isGhost: boolean; targetTimeMs: number; ghostColorHex: number },
+    gameModeParam?: string
   ) {
     this.container = container;
+    this.gameMode = gameModeParam || 'speed';
     this.maxSpeed = stats.speed;
     this.accel = stats.accel;
     // stats.drift affects gauge multiplier
     this.turnSpeed = stats.handling;
+    this.ghostConfig = ghostConfig;
 
     this.onLapChange = onLapChange;
     this.onSpeedChange = onSpeedChange;
@@ -802,6 +807,32 @@ export class GameEngine {
     this.buildTrack();
     this.playerKart = this.createKart(playerKartColor, playerFlameColor, true);
     this.aiKart = this.createKart(aiKartColor, 0xfacc15, false);
+
+    // If ghost mode is active, make the AI kart translucent and colorized
+    if (this.ghostConfig && this.ghostConfig.isGhost) {
+      const gColor = this.ghostConfig.ghostColorHex;
+      this.aiKart.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.material) {
+            child.material = child.material.clone();
+            child.material.transparent = true;
+            child.material.opacity = 0.42;
+            if (child.material.color) {
+              child.material.color.setHex(gColor);
+            }
+            if (child.material.emissive) {
+              child.material.emissive.setHex(gColor);
+              child.material.emissiveIntensity = 0.8;
+            }
+          }
+        }
+      });
+      // Remove overhead indicator marker since it is a phantom ghost
+      const marker = this.aiKart.mesh.getObjectByName("overhead_marker");
+      if (marker) {
+        this.aiKart.mesh.remove(marker);
+      }
+    }
 
     this.resetRace();
   }
@@ -1487,13 +1518,19 @@ export class GameEngine {
       }
       AudioEngine.setDriftActive(true);
 
-      // Reduced drift curve scale from 1.45 to 1.22 for refined high-speed handling
-      angleDiff *= 1.22;
-      this.driftAngle = -this.driftDirection * 0.45;
+      // Boost drifting carve efficiency with a sharper 1.75x steering rate for intense cornering feel
+      angleDiff *= 1.75;
+      this.driftAngle = -this.driftDirection * 0.58;
 
-      const tyreOffset = new THREE.Vector3(-1.3, 0.1, -1.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
-      const driftTirePos = this.playerKart.mesh.position.clone().add(tyreOffset);
-      this.createSmokeParticle(driftTirePos, 0xff007f, 0.45);
+      const leftTyreOffset = new THREE.Vector3(-1.3, 0.1, -1.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
+      const rightTyreOffset = new THREE.Vector3(1.3, 0.1, -1.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
+      
+      const leftTirePos = this.playerKart.mesh.position.clone().add(leftTyreOffset);
+      const rightTirePos = this.playerKart.mesh.position.clone().add(rightTyreOffset);
+      
+      // Dual wheel drift smoke: hot pink on the left, glowing cyan on the right
+      this.createSmokeParticle(leftTirePos, 0xff007f, 0.48);
+      this.createSmokeParticle(rightTirePos, 0x06b6d4, 0.48);
 
       // Wind speed line particles for premium drift feel
       if (Math.random() < 0.35) {
@@ -1507,8 +1544,8 @@ export class GameEngine {
         this.createSpeedLineParticle(spawnPos, backVec, Math.random() > 0.5 ? 0xff007f : 0x06b6d4);
       }
 
-      // Charge Gauge
-      this.boosterGauge += ((this.isSuperNitro ? 5.5 : 1.0) * driftStatsWeight); // stats.drift influence
+      // Charge Gauge (boost active multiplier)
+      this.boosterGauge += ((this.isSuperNitro ? 6.5 : 1.25) * driftStatsWeight); // enhanced gauge charge rate for epic carves
       if (this.boosterGauge >= 100) {
         this.boosterGauge = 0;
         this.boosterStock++;
@@ -1520,11 +1557,22 @@ export class GameEngine {
         this.isDrifting = false;
         AudioEngine.setDriftActive(false);
       }
-      this.driftAngle *= 0.8;
+      this.driftAngle *= 0.78; // Snappier recovery out of drift
     }
 
     this.angle += angleDiff;
     this.playerKart.mesh.rotation.y = this.angle + this.driftAngle;
+
+    // Apply lean/roll (bank angle) on Z-axis depending on the drift and steer direction for organic weight transfer!
+    let targetTiltZ = 0;
+    if (this.isDrifting) {
+      targetTiltZ = this.driftDirection * 0.18; // Lean outwards to emphasize lateral inertia
+    } else if (left) {
+      targetTiltZ = 0.06;
+    } else if (right) {
+      targetTiltZ = -0.06;
+    }
+    this.playerKart.mesh.rotation.z = THREE.MathUtils.lerp(this.playerKart.mesh.rotation.z, targetTiltZ, 0.18);
 
     this.playerKart.wheels.forEach(w => {
       w.rotation.x += this.speed * 1.8;
@@ -1601,6 +1649,40 @@ export class GameEngine {
       return;
     } else {
       this.aiKart.mesh.visible = true;
+    }
+
+    // Ghost bypass movement logic
+    if (this.ghostConfig && this.ghostConfig.isGhost) {
+      const seconds = this.ghostConfig.targetTimeMs / 1000;
+      const totalFrames = seconds * 60;
+      const ghostSpeed = this.maxLaps / totalFrames;
+
+      this.aiProgress += ghostSpeed;
+      if (this.aiProgress > this.maxLaps) {
+        this.aiProgress = this.maxLaps;
+      }
+
+      const splineProgress = this.aiProgress % 1.0;
+      const currentPos = this.aiKart.mesh.position.clone();
+      const targetPos = this.trackSpline.getPointAt(splineProgress);
+
+      this.aiKart.mesh.position.lerp(targetPos, 0.25);
+      this.aiKart.mesh.position.y = 0.22; // float slightly above ground like a hover phantom!
+
+      const lookAngle = Math.atan2(targetPos.x - currentPos.x, targetPos.z - currentPos.z);
+      let angleDiff = lookAngle - this.aiKart.mesh.rotation.y;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      this.aiKart.mesh.rotation.y += angleDiff * 0.28;
+
+      this.aiKart.wheels.forEach(w => {
+        w.rotation.x += 1.2;
+      });
+
+      if (Math.random() < 0.3) {
+        this.createSmokeParticle(this.aiKart.mesh.position.clone(), this.ghostConfig.ghostColorHex, 0.38);
+      }
+      return;
     }
 
     // Decay AI shield timer and emit visual aura particles

@@ -17,6 +17,11 @@ export class PeerNetworkManager {
   onPeerError: (err: string) => void = () => {};
   onRoomIdAssigned: (roomId: string) => void = () => {};
 
+  // Lobby synchronization
+  lobbyMapId: string = 'neon_sky_way';
+  lobbyGameMode: string = 'speed';
+  onLobbyStateReceived: (mapId: string, gameMode: string) => void = () => {};
+
   constructor(playerName: string) {
     this.myInfo = {
       peerId: '',
@@ -134,6 +139,16 @@ export class PeerNetworkManager {
           type: 'register',
           payload: this.myInfo,
         });
+      } else if (this.role === 'host') {
+        // Host immediately sends the current lobby map/mode state to this new peer
+        setTimeout(() => {
+          if (this.connections[peerId] && this.connections[peerId].open) {
+            this.connections[peerId].send({
+              type: 'sync-lobby-state',
+              payload: { mapId: this.lobbyMapId, gameMode: this.lobbyGameMode }
+            });
+          }
+        }, 300);
       }
     });
 
@@ -174,6 +189,14 @@ export class PeerNetworkManager {
         if (this.role === 'client') {
           this.participants = msg.payload;
           this.onParticipantsChange([...this.participants]);
+        }
+        break;
+
+      case 'sync-lobby-state':
+        if (this.role === 'client') {
+          this.lobbyMapId = msg.payload.mapId;
+          this.lobbyGameMode = msg.payload.gameMode;
+          this.onLobbyStateReceived(msg.payload.mapId, msg.payload.gameMode);
         }
         break;
 
@@ -276,6 +299,17 @@ export class PeerNetworkManager {
         payload: props,
       });
     }
+  }
+
+  // Host broadcasts current map / game mode lobby adjustments to all clients
+  hostSyncLobbyState(mapId: string, gameMode: string) {
+    this.lobbyMapId = mapId;
+    this.lobbyGameMode = gameMode;
+    if (this.role !== 'host') return;
+    this.broadcast({
+      type: 'sync-lobby-state',
+      payload: { mapId, gameMode },
+    });
   }
 
   // Tell all participants the race has started

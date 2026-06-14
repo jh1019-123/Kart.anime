@@ -33,6 +33,9 @@ export interface Participant {
   role: PeerRole;
   isReady: boolean;
   kartId: string;
+  selectedAuraId?: string;
+  selectedSkinColor?: string;
+  selectedTitle?: string;
   lastOutcome?: RaceOutcome;
   currentLap?: number;
   currentSpeed?: number;

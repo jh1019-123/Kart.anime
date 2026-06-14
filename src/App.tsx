@@ -35,6 +35,64 @@ import { KartInfo, MapInfo, Participant, RaceOutcome } from './types';
 import { GameEngine, AudioEngine } from './lib/gameEngine';
 import { PeerNetworkManager } from './network';
 
+export interface AuraInfo {
+  id: string;
+  name: string;
+  desc: string;
+  price: number;
+  color: string;
+  hexColor: string;
+  ambientText: string;
+}
+
+export const AURAS: AuraInfo[] = [
+  {
+    id: 'none',
+    name: '기본 접지 하부 그늘',
+    desc: '기본 제공되는 하부 디테일 그림자로 기체의 컴팩트한 밀착 지면 주행감을 돕습니다.',
+    price: 0,
+    color: 'text-slate-400',
+    hexColor: '#475569',
+    ambientText: '시작 기본 제공'
+  },
+  {
+    id: 'neon_cyan',
+    name: '사이버 사이언 네온 글로우',
+    desc: '기체 밑면에서 지면으로 강렬한 네온 광원을 일렁이는 라이트 블루 미래형 서클.',
+    price: 150,
+    color: 'text-cyan-400',
+    hexColor: '#06b6d4',
+    ambientText: '150G 일시 구매'
+  },
+  {
+    id: 'magma_ember',
+    name: '붉은 마그마 펄스 코어',
+    desc: '뜨거운 활화산 코어 용암의 에너지가 하부에서 분출되고 순환하는 마그마 구역.',
+    price: 250,
+    color: 'text-rose-500',
+    hexColor: '#f43f5e',
+    ambientText: '250G 일시 구매'
+  },
+  {
+    id: 'cosmic_nebula',
+    name: '스타더스트 오로라 네뷸라',
+    desc: '오로라 성운과 은하 스타더스트 빔 성운을 띄워내는 초차원 퍼플 글로우 서클.',
+    price: 450,
+    color: 'text-purple-400',
+    hexColor: '#a855f7',
+    ambientText: '450G 일시 구매'
+  },
+  {
+    id: 'golden_champion',
+    name: '황금 엠퍼러 로열 이펙트',
+    desc: '최고 영예인 황금 옥타곤 씰 스파클 격자 무늬가 휘돌아 수놓는 챔피언 광신 효과.',
+    price: 650,
+    color: 'text-yellow-400',
+    hexColor: '#eab308',
+    ambientText: '650G 일시 구매'
+  }
+];
+
 export default function App() {
   // --- Persistent Storage State ---
   const [gold, setGold] = useState<number>(() => {
@@ -74,6 +132,14 @@ export default function App() {
     }
   });
 
+  // Mobile virtual drag-steering state
+  const [mobileSteerRatio, _setMobileSteerRatio] = useState<number>(0);
+  const mobileSteerRatioRef = useRef<number>(0);
+  const setMobileSteerRatio = (val: number) => {
+    mobileSteerRatioRef.current = val;
+    _setMobileSteerRatio(val);
+  };
+
   // --- Extended Profile, Progression, Achievements & Ghost States ---
   const [level, setLevel] = useState<number>(() => {
     try {
@@ -111,6 +177,15 @@ export default function App() {
       return saved ? JSON.parse(saved) : ['default'];
     } catch (e) { return ['default']; }
   });
+  const [selectedAuraId, setSelectedAuraId] = useState<string>(() => {
+    return localStorage.getItem('anime_selected_aura') || 'none';
+  });
+  const [unlockedAuras, setUnlockedAuras] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('anime_unlocked_auras');
+      return saved ? JSON.parse(saved) : ['none'];
+    } catch (e) { return ['none']; }
+  });
   const [bestTimes, setBestTimes] = useState<Record<string, { timeMs: number, timeStr: string, date: string }>>(() => {
     try {
       const saved = localStorage.getItem('anime_best_times');
@@ -135,6 +210,7 @@ export default function App() {
 
   const [rankingsSubTab, setRankingsSubTab] = useState<'profile' | 'leaderboard' | 'achievements'>('profile');
   const [rankingFilter, setRankingFilter] = useState<'global' | 'friends' | 'time_attack' | 'season'>('global');
+  const [crashCountThisRace, setCrashCountThisRace] = useState<number>(0);
 
   const [achievements, setAchievements] = useState<Array<{
     id: string;
@@ -148,25 +224,68 @@ export default function App() {
     rewardTitle?: string;
     rewardSkin?: string;
   }>>(() => {
+    const defaultAchievements = [
+      { id: 'drift_count', name: '드리프트 매니아', desc: '코너 길목 드리프트 15회 주행 달성', target: 15, current: 0, completed: false, rewardClaimed: false, rewardGold: 300, rewardTitle: '아스팔트 마스터' },
+      { id: 'use_booster', name: '질풍노도', desc: '순간 가속 질주 부스터 10회 점화', target: 10, current: 0, completed: false, rewardGold: 400, rewardTitle: '포뮬러 라이더' },
+      { id: 'maps_cleared', name: '그랜드 투어러', desc: '서킷 완주 5회 완료', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 600, rewardTitle: '바람의 지배자', rewardSkin: 'magma_red' },
+      { id: 'gacha_spins', name: '차고지 대부', desc: '행운의 뽑기 상점 3회 참여', target: 3, current: 0, completed: false, rewardClaimed: false, rewardGold: 200, rewardTitle: '수집 대마왕' },
+      { id: 'time_under_65', name: '한계 돌파', desc: '스카이 웨이 완주 리포트 65초 미만 돌파', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 800, rewardTitle: '빛의 속도', rewardSkin: 'diamond_silver' },
+      { id: 'no_crash_finish', name: '무결점 드라이버', desc: '기물이나 외벽 충돌 0회 상태로 레이스 완주', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 1000, rewardTitle: '신의 경지', rewardSkin: 'emerald_gold' },
+      { id: 'all_maps_under_28', name: '한계 속도의 군주', desc: '모든 5개 트랙 각각 28초 이내 완주 기록 달성', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 2000, rewardTitle: '광속 지배자', rewardSkin: 'neon_pulse' }
+    ];
+
     try {
       const saved = localStorage.getItem('anime_achievements');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const merged = defaultAchievements.map(def => {
+            const existing = parsed.find(p => p.id === def.id);
+            if (existing) {
+              return { 
+                ...def, 
+                current: existing.current, 
+                completed: existing.completed, 
+                rewardClaimed: existing.rewardClaimed 
+              };
+            }
+            return def;
+          });
+          return merged;
+        }
       }
     } catch (e) {}
-    return [
-      { id: 'drift_count', name: '드리프트 매니아', desc: '코너 길목 드리프트 15회 주행 달성', target: 15, current: 0, completed: false, rewardClaimed: false, rewardGold: 150, rewardTitle: '아스팔트 마스터' },
-      { id: 'use_booster', name: '질풍노도', desc: '순간 가속 질주 부스터 10회 점화', target: 10, current: 0, completed: false, rewardClaimed: false, rewardGold: 200, rewardTitle: '포뮬러 라이더' },
-      { id: 'maps_cleared', name: '그랜드 투어러', desc: '서킷 완주 5회 완료', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 300, rewardTitle: '바람의 지배자', rewardSkin: 'magma_red' },
-      { id: 'gacha_spins', name: '차고지 대부', desc: '행운의 뽑기 상점 3회 참여', target: 3, current: 0, completed: false, rewardClaimed: false, rewardGold: 100, rewardTitle: '수집 대마왕' },
-      { id: 'time_under_65', name: '한계 돌파', desc: '스카이 웨이 완주 리포트 65초 미만 돌파', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 400, rewardTitle: '빛의 속도', rewardSkin: 'diamond_silver' }
-    ];
+    return defaultAchievements;
   });
 
   // --- UI Layout & Navigation States ---
   // Reorganized lobby as unified full-width tabs
   const [activeMenuTab, setActiveMenuTab] = useState<'garage' | 'maps' | 'modes' | 'gacha' | 'multiplayer' | 'guide' | 'rankings' | null>(null);
+  const [garageSubTab, setGarageSubTab] = useState<'kart' | 'aura' | 'tuning'>('kart');
+
+  // --- Engine Tuning Upgrade States ---
+  const [tuningUpgrades, setTuningUpgrades] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('anime_kart_tuning_v4');
+      return saved ? JSON.parse(saved) : { speed: 1, accel: 1, handling: 1, drift: 1 };
+    } catch {
+      return { speed: 1, accel: 1, handling: 1, drift: 1 };
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('anime_kart_tuning_v4', JSON.stringify(tuningUpgrades));
+  }, [tuningUpgrades]);
+
+  const getUpgradedStats = (baseStats: { speed: number; accel: number; drift: number; handling: number }) => {
+    if (!baseStats) return { speed: 1.15, accel: 0.02, drift: 1.8, handling: 0.03 };
+    return {
+      speed: baseStats.speed + (tuningUpgrades.speed - 1) * 0.045,
+      accel: baseStats.accel + (tuningUpgrades.accel - 1) * 0.0016,
+      drift: baseStats.drift + (tuningUpgrades.drift - 1) * 0.12,
+      handling: baseStats.handling + (tuningUpgrades.handling - 1) * 0.0018,
+    };
+  };
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'finished'>('lobby');
   const [gameMode, setGameMode] = useState<'speed' | 'item' | 'time_attack' | 'ten_laps' | 'super_nitro'>('speed');
   const [leaderboard, setLeaderboard] = useState<Array<{
@@ -193,6 +312,13 @@ export default function App() {
   const [playerProgress, setPlayerProgress] = useState<number>(0);
   const [controlMode, setControlMode] = useState<'keyboard' | 'mobile' | null>(() => {
     return localStorage.getItem('kart_control_mode') as 'keyboard' | 'mobile' | null;
+  });
+  const [showFirstLaunchGuide, setShowFirstLaunchGuide] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('anime_has_seen_controls_v3') !== 'true';
+    } catch {
+      return true;
+    }
   });
 
   // --- Real-Time P2P Network states ---
@@ -259,14 +385,14 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('anime_selected_kart', selectedKartId);
-    if (netManagerRef.current) {
-      netManagerRef.current.updateMyStatus({ kartId: selectedKartId });
-    }
   }, [selectedKartId]);
 
   useEffect(() => {
     localStorage.setItem('anime_selected_map', selectedMapId);
-  }, [selectedMapId]);
+    if (netManagerRef.current && netRole === 'host') {
+      netManagerRef.current.hostSyncLobbyState(selectedMapId, gameMode);
+    }
+  }, [selectedMapId, gameMode, netRole]);
 
   useEffect(() => {
     localStorage.setItem('network_player_name', playerNameInput);
@@ -301,6 +427,27 @@ export default function App() {
   }, [unlockedSkins]);
 
   useEffect(() => {
+    localStorage.setItem('anime_selected_aura', selectedAuraId);
+  }, [selectedAuraId]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_unlocked_auras', JSON.stringify(unlockedAuras));
+  }, [unlockedAuras]);
+
+  // Sync personal choices packet to other players in active multiplayer lobbies
+  useEffect(() => {
+    if (netManagerRef.current) {
+      netManagerRef.current.updateMyStatus({
+        kartId: selectedKartId,
+        selectedAuraId: selectedAuraId,
+        selectedSkinColor: selectedSkinColor,
+        selectedTitle: selectedTitle,
+        name: playerNameInput
+      });
+    }
+  }, [selectedKartId, selectedAuraId, selectedSkinColor, selectedTitle, playerNameInput]);
+
+  useEffect(() => {
     localStorage.setItem('anime_map_recs', JSON.stringify(mapRecommendations));
   }, [mapRecommendations]);
 
@@ -333,16 +480,18 @@ export default function App() {
         return { color: 0x090d16, flameColor: 0xa855f7 };
       case 'emerald_gold':
         return { color: 0x10b981, flameColor: 0xeab308 };
+      case 'neon_pulse':
+        return { color: 0x06b6d4, flameColor: 0xf43f5e }; // Cyan body, Rose/pink flame
       default:
         return { color: baseColor, flameColor: baseFlameColor };
     }
   };
 
-  const updateAchievementProgress = (id: string, amount: number) => {
+  const updateAchievementProgress = (id: string, amount: number, setAbsolute = false) => {
     setAchievements(prev => {
       const updated = prev.map(ach => {
         if (ach.id === id && !ach.completed) {
-          const newCurrent = Math.min(ach.target, ach.current + amount);
+          const newCurrent = setAbsolute ? Math.min(ach.target, amount) : Math.min(ach.target, ach.current + amount);
           const completed = newCurrent >= ach.target;
           if (completed && !ach.completed) {
             triggerComicTextPop('🏆 업적 완수!', '#22c55e');
@@ -356,6 +505,18 @@ export default function App() {
       return updated;
     });
   };
+
+  // Synchronize 'all_maps_under_28' progress based on best times
+  useEffect(() => {
+    const maps = ['neon_sky_way', 'cyberspace_tunnel', 'cosmic_highway', 'lava_crevice', 'frozen_glacier'];
+    const count = maps.filter(mId => {
+      const record = bestTimes[mId];
+      return record && record.timeMs <= 28000;
+    }).length;
+    if (count > 0) {
+      updateAchievementProgress('all_maps_under_28', count, true);
+    }
+  }, [bestTimes]);
 
   // Load Leaderboard
   useEffect(() => {
@@ -417,6 +578,12 @@ export default function App() {
     setRoomIdLive(code);
 
     const netManager = new PeerNetworkManager(playerNameInput);
+    netManager.myInfo.kartId = selectedKartId;
+    netManager.myInfo.selectedAuraId = selectedAuraId;
+    netManager.myInfo.selectedSkinColor = selectedSkinColor;
+    netManager.myInfo.selectedTitle = selectedTitle;
+    netManager.lobbyMapId = selectedMapId;
+    netManager.lobbyGameMode = gameMode;
     netManagerRef.current = netManager;
 
     netManager.onConnectionStatus = (status) => setNetStatus(status);
@@ -429,7 +596,7 @@ export default function App() {
         const next = prev.filter(x => x.peerId !== outcome.peerId);
         return [...next, outcome].sort((a,b) => (a.finalTime || 999999) - (b.finalTime || 999999));
       });
-      showHUDNotification('경기 완주 보고 수신!', `${outcome.name} 학생이 완주를 보고했습니다.`);
+      showHUDNotification('완주 결과', `${outcome.name} 레이서가 완주를 완료했습니다.`);
     };
 
     netManager.init('host', code);
@@ -452,6 +619,10 @@ export default function App() {
     const cleanCode = roomIdInput.trim().toUpperCase();
     setRoomIdLive(cleanCode);
     const netManager = new PeerNetworkManager(playerNameInput);
+    netManager.myInfo.kartId = selectedKartId;
+    netManager.myInfo.selectedAuraId = selectedAuraId;
+    netManager.myInfo.selectedSkinColor = selectedSkinColor;
+    netManager.myInfo.selectedTitle = selectedTitle;
     netManagerRef.current = netManager;
 
     netManager.onConnectionStatus = (status) => setNetStatus(status);
@@ -459,10 +630,18 @@ export default function App() {
     netManager.onParticipantsChange = (list) => setParticipants(list);
     netManager.onRoomIdAssigned = (assignedId) => setRoomIdLive(assignedId);
     
+    netManager.onLobbyStateReceived = (mapId, mode) => {
+      setSelectedMapId(mapId);
+      const matchedMode = mode as any;
+      if (['speed','item','time_attack','ten_laps','coin_rush'].includes(matchedMode)) {
+        setGameMode(matchedMode);
+      }
+    };
+
     netManager.onGameStartReceived = (mapId, mode) => {
       setSelectedMapId(mapId);
       const matchedMode = mode as any;
-      if (['speed','item','time_attack','ten_laps','super_nitro'].includes(matchedMode)) {
+      if (['speed','item','time_attack','ten_laps','coin_rush'].includes(matchedMode)) {
         setGameMode(matchedMode);
       }
       setIsMultiplayerActive(true);
@@ -578,7 +757,14 @@ export default function App() {
 
     const loop = () => {
       if (engineRef.current && gameState === 'playing') {
-        engineRef.current.update(keysPressedRef.current, currentKart.stats.drift);
+        const keysToSend: Record<string, any> = { ...keysPressedRef.current };
+        if (controlMode === 'mobile') {
+          if (!keysToSend['ArrowDown']) {
+            keysToSend['ArrowUp'] = true;
+          }
+          keysToSend['steerRatio'] = mobileSteerRatioRef.current;
+        }
+        engineRef.current.update(keysToSend, getUpgradedStats(currentKart.stats).drift);
 
         const instance = engineRef.current;
         setRivalProgress(instance.aiProgress);
@@ -653,7 +839,7 @@ export default function App() {
         cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-  }, [gameState, currentKart, isMultiplayerActive, netRole]);
+  }, [gameState, currentKart, isMultiplayerActive, netRole, controlMode]);
 
   // --- Start Racing Sequencer ---
   const launchRace = (forceStart = false) => {
@@ -667,149 +853,194 @@ export default function App() {
       setIsMultiplayerActive(true);
     }
 
-    setGameState('countdown');
-    setCurrentLap(1);
-    setSpeedVal(0);
-    setBoosterGauge(0);
-    setBoosterStock(0);
-    setActiveItem(null);
-    setShieldActive(false);
+    // Show the profile vs screen first
+    setGameState('vsscreen');
 
-    let count = 3;
-    triggerComicTextPop(`${count}`, '#eab308');
-    AudioEngine.playItemPickup();
+    setTimeout(() => {
+      // Transition to countdown after the matchup screen
+      setGameState('countdown');
+      setCurrentLap(1);
+      setSpeedVal(0);
+      setBoosterGauge(0);
+      setBoosterStock(0);
+      setActiveItem(null);
+      setShieldActive(false);
+      setCrashCountThisRace(0);
 
-    const timer = setInterval(() => {
-      count--;
-      if (count > 0) {
-        triggerComicTextPop(`${count}`, '#eab308');
-        AudioEngine.playItemPickup();
-      } else {
-        triggerComicTextPop('GO!', '#f43f5e');
-        AudioEngine.playBoost();
-        
-        if (canvasContainerRef.current) {
-          if (engineRef.current) {
-            engineRef.current.cleanup();
-          }
+      let count = 3;
+      triggerComicTextPop(`${count}`, '#eab308');
+      AudioEngine.playItemPickup();
 
-          // Compute ghost configuration if selected
-          let ghostConfigParam = undefined;
-          if (selectedGhostMode !== 'none') {
-            let targetMs = 60000; // default 60s
-            let colorHex = 0x22d3ee; // cyan for my best
-            
-            if (selectedGhostMode === 'my_best') {
-              const personalBest = bestTimes[currentMap.id];
-              targetMs = personalBest ? personalBest.timeMs : 75000;
-              colorHex = 0x22d3ee; // cyan
-            } else if (selectedGhostMode === 'friend_ghost') {
-              const pTimes: Record<string, number> = {
-                neon_sky_way: 63500,
-                cyberspace_tunnel: 74200,
-                cosmic_highway: 81100,
-                lava_crevice: 71500,
-                frozen_glacier: 76800,
-              };
-              targetMs = pTimes[currentMap.id] || 75000;
-              colorHex = 0xd946ef; // magenta/pink
-            } else if (selectedGhostMode === 'rival_1st') {
-              const pTimes: Record<string, number> = {
-                neon_sky_way: 52000,
-                cyberspace_tunnel: 61000,
-                cosmic_highway: 69000,
-                lava_crevice: 58000,
-                frozen_glacier: 64000,
-              };
-              targetMs = pTimes[currentMap.id] || 55000;
-              colorHex = 0xeab308; // gorgeous gold
-            }
-            
-            // Adjust factor according to gameMode lap multiplier limits
-            const baseLaps = 3;
-            const activeLaps = gameMode === 'time_attack' ? 1 : gameMode === 'ten_laps' ? 10 : 3;
-            targetMs = Math.round(targetMs * (activeLaps / baseLaps));
-
-            ghostConfigParam = {
-              isGhost: true,
-              targetTimeMs: targetMs,
-              ghostColorHex: colorHex
-            };
-          }
-
-          engineRef.current = new GameEngine(
-            canvasContainerRef.current,
-            currentMap,
-            activeKartColor,
-            activeKartFlameColor,
-            selectedGhostMode !== 'none' ? (ghostConfigParam?.ghostColorHex || 0xfacc15) : 0xfacc15,
-            currentKart.stats,
-            (lap) => {
-              setCurrentLap(lap);
-              triggerComicTextPop(`LAP ${lap}!`, '#22d3ee');
-              const finalLapNumber = gameMode === 'time_attack' ? 1 : gameMode === 'ten_laps' ? 10 : 3;
-              if (lap === finalLapNumber) {
-                showHUDNotification('FINAL LAP 돌입!', '마지막 질주를 이어가세요!');
-              } else {
-                showHUDNotification(`LAP ${lap} 진입!`, '페이스를 가속하세요!');
-              }
-            },
-            (speed) => setSpeedVal(speed),
-            (gauge) => setBoosterGauge(gauge),
-            (stock) => setBoosterStock(stock),
-            () => {
-              if (gameMode === 'item') {
-                triggerItemAcquisition();
-              }
-            },
-            (playerWon, finalTime) => {
-              concludeRaceOutcome(playerWon, finalTime);
-            },
-            () => {
-              triggerComicTextPop('AI CRASH!', '#a855f7');
-              showHUDNotification('피격 성공!', '라이벌 스핀 연계를 유도했습니다.');
-            },
-            () => {
-              triggerComicTextPop('CRASH!', '#ef4444');
-              showHUDNotification('충돌 발생!', '트랩 타격 또는 외벽 충돌로 속도가 저하됩니다.');
-            },
-            ghostConfigParam,
-            gameMode
-          );
-
-          if (gameMode === 'time_attack') {
-            engineRef.current.maxLaps = 1;
-          } else if (gameMode === 'ten_laps') {
-            engineRef.current.maxLaps = 10;
-          } else {
-            engineRef.current.maxLaps = 3;
-          }
-
-          engineRef.current.isSuperNitro = gameMode === 'super_nitro';
-          engineRef.current.gameMode = gameMode;
-          engineRef.current.onComicPopup = (text: string, color: string) => {
-            triggerComicTextPop(text, color);
-          };
-          engineRef.current.onHUDNotification = (title: string, body: string) => {
-            showHUDNotification(title, body);
-          };
-          engineRef.current.activateEngine();
+      const timer = setInterval(() => {
+        count--;
+        if (count > 0) {
+          triggerComicTextPop(`${count}`, '#eab308');
+          AudioEngine.playItemPickup();
+        } else {
+          triggerComicTextPop('GO!', '#f43f5e');
+          AudioEngine.playBoost();
           
-          if (AudioEngine.ctx) {
-            AudioEngine.playEngine(0.15);
+          if (canvasContainerRef.current) {
+            if (engineRef.current) {
+              engineRef.current.cleanup();
+            }
+
+            // Compute ghost configuration if selected
+            let ghostConfigParam = undefined;
+            if (selectedGhostMode !== 'none') {
+              let targetMs = 60000; // default 60s
+              let colorHex = 0x22d3ee; // cyan for my best
+              
+              if (selectedGhostMode === 'my_best') {
+                const personalBest = bestTimes[currentMap.id];
+                targetMs = personalBest ? personalBest.timeMs : 75000;
+                colorHex = 0x22d3ee; // cyan
+              } else if (selectedGhostMode === 'friend_ghost') {
+                const pTimes: Record<string, number> = {
+                  neon_sky_way: 63500,
+                  cyberspace_tunnel: 74200,
+                  cosmic_highway: 81100,
+                  lava_crevice: 71500,
+                  frozen_glacier: 76800,
+                };
+                targetMs = pTimes[currentMap.id] || 75000;
+                colorHex = 0xd946ef; // magenta/pink
+              } else if (selectedGhostMode === 'rival_1st') {
+                const pTimes: Record<string, number> = {
+                  neon_sky_way: 52000,
+                  cyberspace_tunnel: 61000,
+                  cosmic_highway: 69000,
+                  lava_crevice: 58000,
+                  frozen_glacier: 64000,
+                };
+                targetMs = pTimes[currentMap.id] || 55000;
+                colorHex = 0xeab308; // gorgeous gold
+              }
+              
+              // Adjust factor according to gameMode lap multiplier limits
+              const baseLaps = 3;
+              const activeLaps = gameMode === 'time_attack' ? 1 : gameMode === 'ten_laps' ? 10 : 3;
+              targetMs = Math.round(targetMs * (activeLaps / baseLaps));
+
+              ghostConfigParam = {
+                isGhost: true,
+                targetTimeMs: targetMs,
+                ghostColorHex: colorHex
+              };
+            }
+
+            engineRef.current = new GameEngine(
+              canvasContainerRef.current,
+              currentMap,
+              activeKartColor,
+              activeKartFlameColor,
+              selectedGhostMode !== 'none' ? (ghostConfigParam?.ghostColorHex || 0xfacc15) : 0xfacc15,
+              getUpgradedStats(currentKart.stats),
+              (lap) => {
+                setCurrentLap(lap);
+                triggerComicTextPop(`LAP ${lap}!`, '#22d3ee');
+                const finalLapNumber = gameMode === 'time_attack' ? 1 : gameMode === 'ten_laps' ? 10 : 3;
+                if (lap === finalLapNumber) {
+                  showHUDNotification('FINAL LAP 돌입!', '마지막 완주를 시작하세요!');
+                } else {
+                  showHUDNotification(`LAP ${lap} 진입!`, '페이스를 높여 가속하세요!');
+                }
+              },
+              (speed) => setSpeedVal(speed),
+              (gauge) => setBoosterGauge(gauge),
+              (stock) => setBoosterStock(stock),
+              () => {
+                if (gameMode === 'item') {
+                  triggerItemAcquisition();
+                }
+              },
+              (playerWon, finalTime) => {
+                concludeRaceOutcome(playerWon, finalTime);
+              },
+              () => {
+                triggerComicTextPop('AI CRASH!', '#a855f7');
+                showHUDNotification('피격 성공!', '라이벌 기체를 스핀시켰습니다.');
+              },
+              () => {
+                triggerComicTextPop('CRASH!', '#ef4444');
+                showHUDNotification('충돌 발생!', '벽이나 유도 트랩에 충돌했습니다.');
+                setCrashCountThisRace(prev => prev + 1);
+              },
+              ghostConfigParam,
+              gameMode,
+              selectedAuraId
+            );
+
+            // Set coin collected callback inside Coin Rush Mode
+            engineRef.current.onCoinCollected = () => {
+              setGold(prev => prev + 3);
+              triggerComicTextPop('+3 GOLD!', '#ffb700');
+            };
+
+            if (gameMode === 'time_attack') {
+              engineRef.current.maxLaps = 1;
+            } else if (gameMode === 'ten_laps') {
+              engineRef.current.maxLaps = 10;
+            } else {
+              engineRef.current.maxLaps = 3;
+            }
+
+            engineRef.current.isSuperNitro = false;
+            engineRef.current.gameMode = gameMode;
+            engineRef.current.onComicPopup = (text: string, color: string) => {
+              triggerComicTextPop(text, color);
+            };
+            engineRef.current.onHUDNotification = (title: string, body: string) => {
+              showHUDNotification(title, body);
+            };
+            engineRef.current.activateEngine();
+            
+            if (AudioEngine.ctx) {
+              AudioEngine.playEngine(0.15);
+            }
           }
+          setGameState('playing');
+          clearInterval(timer);
         }
-        setGameState('playing');
-        clearInterval(timer);
-      }
-    }, 1000);
+      }, 1000);
+    }, 3205);
   };
 
   const concludeRaceOutcome = (playerWon: boolean, finalTime: number) => {
-    let baseGold = playerWon ? 45 : 20;
+    // Proportional gold formula scaled by target duration by game mode
+    // Ensures a balanced economy around maximum 70 coins.
     const timeInSec = finalTime / 1000;
-    const speedBonus = Math.max(0, Math.floor(35 - timeInSec));
-    const finalGoldAwarded = Math.min(70, baseGold + speedBonus);
+    
+    // Set target expected durations for each mode (in seconds)
+    let targetDurationSec = 75; // Standard 3 Laps (Speed/Item)
+    if (gameMode === 'time_attack') {
+      targetDurationSec = 25; // 1 Lap Time Attack
+    } else if (gameMode === 'ten_laps') {
+      targetDurationSec = 250; // 10 Laps Endurance
+    } else if (gameMode === 'coin_rush') {
+      targetDurationSec = 45; // Coin Rush Mode duration
+    }
+
+    // Time efficiency score ratio: is higher when player completes the race quick or around target duration.
+    // Prevents exploiting long idling to stack up infinite time-based gold.
+    const speedRatio = Math.max(0.1, Math.min(1.0, targetDurationSec / Math.max(8, timeInSec)));
+    
+    // Base gold reward depending on achievement of goal (won/succeeded or finished)
+    // Scaled down to match the maximum limit of 70 coins.
+    const baseCompletionGold = playerWon ? 40 : 25;
+    
+    // Efficiency/performance top-up gold (maximum 30 gold)
+    const performanceGold = Math.round(speedRatio * 30);
+    
+    let rawGoldAwarded = baseCompletionGold + performanceGold;
+
+    // Coin Rush game mode balance scale
+    if (gameMode === 'coin_rush') {
+      rawGoldAwarded = Math.min(45, rawGoldAwarded);
+    }
+
+    // Strictly cap the maximum race completion reward to 70 Gold (coins) as requested!
+    const finalGoldAwarded = Math.min(70, rawGoldAwarded);
 
     const mins = Math.floor(finalTime / 60000);
     const secs = Math.floor((finalTime % 60000) / 1000);
@@ -877,6 +1108,9 @@ export default function App() {
       updateAchievementProgress('use_booster', 3);
       if (currentMap.id === 'neon_sky_way' && finalTime < 65000) {
         updateAchievementProgress('time_under_65', 1);
+      }
+      if (crashCountThisRace === 0) {
+        updateAchievementProgress('no_crash_finish', 1);
       }
     } catch (err) {
       console.error('Achievements update error:', err);
@@ -1053,7 +1287,8 @@ export default function App() {
             const roll = Math.random() * 100;
             let finalKart: KartInfo;
             if (roll < 10) {
-              finalKart = KARTS.find(k => k.rarity === 'Legendary') || KARTS[KARTS.length - 1];
+              const legendaries = KARTS.filter(k => k.rarity === 'Legendary');
+              finalKart = legendaries[Math.floor(Math.random() * legendaries.length)] || KARTS[KARTS.length - 1];
             } else if (roll < 55) {
               const rares = KARTS.filter(k => k.rarity === 'Rare');
               finalKart = rares[Math.floor(Math.random() * rares.length)];
@@ -1731,142 +1966,546 @@ export default function App() {
                 <div className="w-full">
                   <AnimatePresence mode="wait">
               
-              {/* === TAB 1: GARAGE (차고) === */}
               {activeMenuTab === 'garage' && (
                 <motion.div
                   key="garage"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -10 }}
-                  className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-stretch"
+                  className="flex flex-col space-y-5 w-full"
                 >
-                  {/* Left sub-rhythm: Selection list */}
-                  <div className="lg:col-span-5 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-5 flex flex-col space-y-4 shadow-xl">
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <h3 className="text-sm font-black text-pink-400 flex items-center space-x-2">
-                        <Trophy size={16} />
-                        <span>내 차고 기어 리스트</span>
-                      </h3>
-                      <span className="text-[10px] text-gray-405 text-gray-400 font-mono">가챠 소유권: {unlockedKarts.length} / {KARTS.length}</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
-                      {KARTS.map((k) => {
-                        const isUnlocked = unlockedKarts.includes(k.id);
-                        const isEquipped = selectedKartId === k.id;
-                        return (
-                          <button
-                            key={k.id}
-                            disabled={!isUnlocked}
-                            onClick={() => {
-                              triggerAudioInit();
-                              setSelectedKartId(k.id);
-                            }}
-                            className={`p-3 rounded-2xl border text-left cursor-pointer transition-all flex flex-col justify-between h-[85px] relative overflow-hidden ${
-                              !isUnlocked 
-                                ? 'opacity-35 bg-slate-950/80 border-slate-900 cursor-not-allowed' 
-                                : isEquipped 
-                                  ? 'bg-pink-950/25 border-pink-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.3)]' 
-                                  : 'bg-slate-950 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between w-full">
-                              <span className="text-xs font-black truncate max-w-[130px]">{k.name}</span>
-                              <div className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: `#${k.color.toString(16).padStart(6, '0')}` }} />
-                            </div>
-
-                            <div className="flex justify-between items-end mt-2">
-                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                                k.rarity === 'Legendary' ? 'bg-purple-900/30 text-purple-400 border border-purple-800/40' : k.rarity === 'Rare' ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-800/40' : 'bg-slate-800 text-slate-400'
-                              }`}>
-                                {isUnlocked ? k.rarity : '미획득 LC'}
-                              </span>
-                              {isUnlocked && isEquipped && (
-                                <span className="bg-pink-500 text-slate-950 text-[8px] font-black px-1.5 rounded uppercase font-mono tracking-widest scale-95 origin-right">
-                                  EQUIPPED
-                                </span>
-                              )}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {/* Aura Customization Navigation Sub-Tabs */}
+                  <div className="flex bg-slate-950/80 p-1 border border-slate-800 rounded-2xl space-x-2 w-fit">
+                    <button
+                      onClick={() => { triggerAudioInit(); setGarageSubTab('kart'); }}
+                      className={`px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
+                        garageSubTab === 'kart'
+                          ? 'bg-pink-500 text-slate-950 shadow-md font-bolder'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-900'
+                      }`}
+                    >
+                      <span>🏎️</span>
+                      <span>보유 엔진 카트바디 ({unlockedKarts.length})</span>
+                    </button>
+                    <button
+                      onClick={() => { triggerAudioInit(); setGarageSubTab('aura'); }}
+                      className={`px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
+                        garageSubTab === 'aura'
+                          ? 'bg-cyan-400 text-slate-950 shadow-md font-bolder'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-900'
+                      }`}
+                    >
+                      <span>✨</span>
+                      <span>카트 하부 데코 오우라 ({unlockedAuras.length})</span>
+                    </button>
+                    <button
+                      onClick={() => { triggerAudioInit(); setGarageSubTab('tuning'); }}
+                      className={`px-4 py-2 text-xs font-black rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
+                        garageSubTab === 'tuning'
+                          ? 'bg-amber-400 text-slate-950 shadow-md font-bolder'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-900'
+                      }`}
+                    >
+                      <span>🔧</span>
+                      <span>기체 엔진 성능 영구 튜닝 (Upgrades)</span>
+                    </button>
                   </div>
 
-                  {/* Right sub-rhythm: Detailed radar status metrics with visual meters */}
-                  <div className="lg:col-span-7 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
-                    <div className="border-b border-white/5 pb-3">
-                      <div className="flex items-center justify-between">
-                        <span className={`text-[9px] font-black px-2.5 py-0.5 rounded uppercase tracking-wider ${
-                          currentKart.rarity === 'Legendary' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : currentKart.rarity === 'Rare' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-slate-800 text-slate-400'
-                        }`}>
-                          {currentKart.rarity} 등급 카트바디
-                        </span>
-                        <div className="flex items-center space-x-1.5 text-xs text-gray-400">
-                          <span className="font-bold">기어 컬러:</span>
-                          <span className="w-4 h-4 rounded-full border border-white/40 shadow" style={{ backgroundColor: `#${currentKart.color.toString(16).padStart(6, '0')}` }} />
+                  {garageSubTab === 'aura' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-stretch">
+                      {/* Left Column: List of All Auras */}
+                      <div className="lg:col-span-5 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-5 flex flex-col space-y-4 shadow-xl">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                          <h3 className="text-sm font-black text-cyan-400 flex items-center space-x-2">
+                            <Sparkles size={16} />
+                            <span>카트 하부 네온 데코 (Auras)</span>
+                          </h3>
+                          <span className="text-[10px] text-gray-400 font-mono">획득: {unlockedAuras.length} / {AURAS.length}</span>
+                        </div>
+
+                        <div className="flex flex-col space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                          {AURAS.map((aur) => {
+                            const isUnlocked = unlockedAuras.includes(aur.id);
+                            const isEquipped = selectedAuraId === aur.id;
+                            return (
+                              <div
+                                key={aur.id}
+                                className={`p-3 rounded-2xl border text-left flex flex-col justify-between relative overflow-hidden transition-all duration-300 ${
+                                  isEquipped
+                                    ? 'bg-slate-950/90 border-cyan-500 shadow-[0_0_15px_rgba(34,211,238,0.25)]'
+                                    : 'bg-slate-950/60 border-slate-800/80 hover:border-slate-700'
+                                }`}
+                              >
+                                <div className="flex items-start justify-between w-full">
+                                  <div className="flex-1">
+                                    <div className="flex items-center space-x-2">
+                                      <span className={`text-xs font-black ${aur.color}`}>{aur.name}</span>
+                                      {isEquipped && (
+                                        <span className="bg-cyan-405 text-slate-950 text-[7px] px-1 font-black rounded font-mono uppercase tracking-wider animate-pulse" style={{ backgroundColor: '#22d3ee' }}>
+                                          ACTIVE
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-1 max-w-[200px] leading-tight">
+                                      {aur.desc}
+                                    </p>
+                                  </div>
+                                  
+                                  <div className="flex flex-col items-end space-y-2">
+                                    <span className="text-[8px] font-mono font-bold text-gray-400 bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800">
+                                      {aur.ambientText}
+                                    </span>
+                                    {isUnlocked ? (
+                                      isEquipped ? (
+                                        <span className="text-cyan-400 font-black text-[9px] flex items-center space-x-0.5 mt-1">
+                                          <span>✓ 장착중</span>
+                                        </span>
+                                      ) : (
+                                        <button
+                                          onClick={() => {
+                                            triggerAudioInit();
+                                            setSelectedAuraId(aur.id);
+                                            showHUDNotification('데코 정밀 장착', `${aur.name} 오우라 장착 완료!`);
+                                          }}
+                                          className="text-[9px] cursor-pointer bg-slate-850 hover:bg-slate-800 border border-slate-700 text-gray-300 hover:text-white px-2 py-1 rounded-lg font-bold transition-all"
+                                        >
+                                          장착하기
+                                        </button>
+                                      )
+                                    ) : (
+                                      <button
+                                        onClick={() => {
+                                          triggerAudioInit();
+                                          if (gold >= aur.price) {
+                                            setGold(prev => prev - aur.price);
+                                            const updated = [...unlockedAuras, aur.id];
+                                            setUnlockedAuras(updated);
+                                            localStorage.setItem('anime_unlocked_auras', JSON.stringify(updated));
+                                            setSelectedAuraId(aur.id);
+                                            showHUDNotification('오우라 구매 성공', `${aur.name}를 해금하고 장착했습니다!`);
+                                            triggerComicTextPop('UNLOCK!', '#22d3ee');
+                                          } else {
+                                            showHUDNotification('골드 부족', '상점 아이템을 구매하기 위한 골드가 부족합니다.');
+                                            triggerComicTextPop('NO GOLD', '#ef4444');
+                                          }
+                                        }}
+                                        className="text-[9px] cursor-pointer bg-cyan-400 hover:bg-cyan-300 text-slate-950 px-2 py-1 rounded-lg font-black transition-all flex items-center space-x-1 shadow-md hover:shadow-cyan-500/20"
+                                      >
+                                        <span>🛒</span>
+                                        <span>{aur.price}G 구매</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                      <h4 className="text-xl font-black text-white mt-1.5 flex items-center">
-                        <Gauge className="mr-2 text-pink-500" size={18} />
-                        <span>{currentKart.name}</span>
-                      </h4>
-                      <p className="text-xs text-slate-300 mt-2 leading-relaxed h-[42px] overflow-hidden">
-                        {currentKart.description}
-                      </p>
+
+                      {/* Right Column: Holographic preview simulated box */}
+                      <div className="lg:col-span-7 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
+                        <div className="border-b border-white/5 pb-3">
+                          <span className="text-[9px] font-black px-2.5 py-0.5 rounded uppercase tracking-wider bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                            하부 특수 조명 파티클 엔진
+                          </span>
+                          
+                          {(() => {
+                            const activeAura = AURAS.find(a => a.id === selectedAuraId) || AURAS[0];
+                            return (
+                              <>
+                                <h4 className="text-xl font-black text-white mt-1.5 flex items-center">
+                                  <Sparkles className="mr-2 text-cyan-400" size={18} />
+                                  <span>{activeAura.name}</span>
+                                </h4>
+                                <p className="text-xs text-slate-300 mt-2 leading-relaxed">
+                                  {activeAura.desc}
+                                </p>
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Interactive Holographic Wireframe Kart Spinning Over Aura simulation */}
+                        <div className="my-4 bg-slate-950 rounded-2xl border border-slate-850 p-4 relative flex flex-col items-center justify-center min-h-[160px] overflow-hidden">
+                          {(() => {
+                            const activeAura = AURAS.find(a => a.id === selectedAuraId) || AURAS[0];
+                            return (
+                              <div 
+                                className="absolute w-[220px] h-[75px] rounded-[50%] blur-2xl opacity-45 mix-blend-screen animate-pulse pointer-events-none transition-all duration-700"
+                                style={{ 
+                                  backgroundColor: activeAura.hexColor,
+                                  bottom: '5%',
+                                  transform: 'scaleY(0.4)'
+                                }}
+                              />
+                            );
+                          })()}
+
+                          <div className="absolute inset-0 bg-[linear-gradient(rgba(34,211,238,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(34,211,238,0.03)_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none [mask-image:radial-gradient(ellipse_at_center,black_40%,transparent_100%)]" />
+
+                          {(() => {
+                            const activeAura = AURAS.find(a => a.id === selectedAuraId) || AURAS[0];
+                            if (activeAura.id === 'none') {
+                              return (
+                                <div className="z-10 w-24 h-6 border-2 border-dashed border-slate-850 rounded-[50%] flex items-center justify-center transform -rotate-12 mt-12 mb-4" />
+                              );
+                            }
+                            return (
+                              <motion.div
+                                animate={{ rotateX: 68, rotate: 360 }}
+                                transition={{ repeat: Infinity, duration: 4.8, ease: "linear" }}
+                                style={{ borderColor: activeAura.hexColor }}
+                                className="z-10 w-24 h-24 border-4 border-double rounded-full flex items-center justify-center transform mt-4 mb-2 shadow-[0_0_20px_inset_rgba(34,211,238,0.1)] relative"
+                              >
+                                <div 
+                                  style={{ borderColor: activeAura.hexColor }}
+                                  className="w-[72%] h-[72%] border border-dashed rounded-full animate-spin [animation-duration:3s]" 
+                                />
+                                <span className="absolute w-2 h-2 rounded-full -top-1 left-8 animate-ping" style={{ backgroundColor: activeAura.hexColor }} />
+                                <span className="absolute w-1.5 h-1.5 rounded-full bottom-4 -right-1" style={{ backgroundColor: activeAura.hexColor }} />
+                              </motion.div>
+                            );
+                          })()}
+
+                          <div className="z-10 mt-2 text-[8px] font-mono tracking-widest text-slate-500 flex items-center space-x-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-bounce" />
+                            <span>TUNING PREVIEW MODULE / ACTIVE REALTIME</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/80 rounded-2xl p-2 px-4 border border-dashed border-slate-850 flex justify-between items-center text-[10.5px]">
+                          <span className="text-gray-400 font-medium font-mono">가챠 상점 및 맵 미션 보상 골드로 하부 아우라 튜닝 키트를 추가로 수집하십시오.</span>
+                          <span className="text-cyan-400 font-black">★ TUNING ENABLED</span>
+                        </div>
+                      </div>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-4 font-mono">
-                      {/* Metric 1 */}
-                      <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
-                        <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
-                          <span>최고 가속도 성능 (MAX ENTRANCE)</span>
-                          <span className="text-pink-400 font-black">{(currentKart.stats.speed * 180).toFixed(0)} km/h</span>
+                  ) : garageSubTab === 'tuning' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-stretch">
+                      {/* Left Column: Currently Equipped Kart & Status Indicators */}
+                      <div className="lg:col-span-5 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-5 flex flex-col space-y-4 shadow-xl justify-between">
+                        <div>
+                          <div className="border-b border-white/5 pb-2">
+                            <h3 className="text-sm font-black text-amber-400 flex items-center space-x-2">
+                              <span>🏎️</span>
+                              <span>튜닝 대상 기어 사양</span>
+                            </h3>
+                          </div>
+                          <div className="mt-4 bg-slate-950 p-4 rounded-2xl border border-slate-850 relative overflow-hidden">
+                            <div className="absolute top-3 right-3 flex items-center space-x-1.5">
+                              <span className="w-2.5 h-2.5 rounded-full border border-white/40 shadow shadow-[0_0_8px_rgba(255,255,255,0.4)]" style={{ backgroundColor: `#${currentKart.color.toString(16).padStart(6, '0')}` }} />
+                            </div>
+                            <span className="text-[9px] font-mono tracking-widest text-slate-500 block uppercase">TUNING ACTIVE TARGET</span>
+                            <h4 className="text-lg font-black text-white mt-1">{currentKart.name}</h4>
+                            <p className="text-[10.5px] text-slate-400 mt-1 lines-clamp-2 leading-relaxed h-[36px] overflow-hidden">
+                              {currentKart.description}
+                            </p>
+                          </div>
                         </div>
-                        <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-                          <div className="h-full bg-pink-500 rounded-full" style={{ width: `${(currentKart.stats.speed / 1.7) * 100}%` }} />
+
+                        {/* Tuning Statistics Preview */}
+                        <div className="space-y-4 font-mono mt-2">
+                          <span className="text-[10px] font-black text-amber-400 block tracking-widest border-b border-white/5 pb-1 uppercase">★ REALTIME UPGRADED LAUNCH SPECS</span>
+                          
+                          {/* Stat item 1 */}
+                          <div>
+                            <div className="flex justify-between text-[11px] mb-1">
+                              <span className="text-gray-400">최고 속도 성능 (SPEED)</span>
+                              <div className="flex space-x-1.5 items-center">
+                                <span className="text-gray-500 line-through">{(currentKart.stats.speed * 180).toFixed(0)}</span>
+                                <span className="text-pink-400 font-extrabold">→ {(getUpgradedStats(currentKart.stats).speed * 180).toFixed(0)} km/h</span>
+                              </div>
+                            </div>
+                            <div className="h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-850 flex items-center p-[1px]">
+                              <div className="h-full bg-slate-800 rounded-full" style={{ width: `${(currentKart.stats.speed / 1.8) * 100}%` }} />
+                              <div className="h-full bg-pink-500 rounded-full animate-pulse" style={{ width: `${((getUpgradedStats(currentKart.stats).speed - currentKart.stats.speed) / 1.8) * 100}%` }} />
+                            </div>
+                          </div>
+
+                          {/* Stat item 2 */}
+                          <div>
+                            <div className="flex justify-between text-[11px] mb-1">
+                              <span className="text-gray-400">추진 가속력 (ACCELERATION)</span>
+                              <div className="flex space-x-1.5 items-center">
+                                <span className="text-gray-500 line-through">{(currentKart.stats.accel * 10000).toFixed(0)}</span>
+                                <span className="text-cyan-400 font-extrabold">→ {(getUpgradedStats(currentKart.stats).accel * 10000).toFixed(0)} CP</span>
+                              </div>
+                            </div>
+                            <div className="h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-850 flex items-center p-[1px]">
+                              <div className="h-full bg-slate-800 rounded-full" style={{ width: `${(currentKart.stats.accel / 0.05) * 100}%` }} />
+                              <div className="h-full bg-cyan-400 rounded-full animate-pulse" style={{ width: `${((getUpgradedStats(currentKart.stats).accel - currentKart.stats.accel) / 0.05) * 100}%` }} />
+                            </div>
+                          </div>
+
+                          {/* Stat item 3 */}
+                          <div>
+                            <div className="flex justify-between text-[11px] mb-1">
+                              <span className="text-gray-400">드리프트 게이지 효율 (DRIFT)</span>
+                              <div className="flex space-x-1.5 items-center">
+                                <span className="text-gray-500 line-through font-normal">{(currentKart.stats.drift * 50).toFixed(0)}</span>
+                                <span className="text-yellow-400 font-extrabold">→ {(getUpgradedStats(currentKart.stats).drift * 50).toFixed(0)} DP</span>
+                              </div>
+                            </div>
+                            <div className="h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-850 flex items-center p-[1px]">
+                              <div className="h-full bg-slate-800 rounded-full" style={{ width: `${(currentKart.stats.drift / 4.0) * 100}%` }} />
+                              <div className="h-full bg-yellow-400 rounded-full animate-pulse" style={{ width: `${((getUpgradedStats(currentKart.stats).drift - currentKart.stats.drift) / 4.0) * 100}%` }} />
+                            </div>
+                          </div>
+
+                          {/* Stat item 4 */}
+                          <div>
+                            <div className="flex justify-between text-[11px] mb-1">
+                              <span className="text-gray-400">코너 핸들링 감도 (HANDLING)</span>
+                              <div className="flex space-x-1.5 items-center">
+                                <span className="text-gray-500 line-through">{(currentKart.stats.handling * 1000).toFixed(0)}</span>
+                                <span className="text-purple-400 font-extrabold">→ {(getUpgradedStats(currentKart.stats).handling * 1000).toFixed(0)} HP</span>
+                              </div>
+                            </div>
+                            <div className="h-2.5 bg-slate-950 rounded-full overflow-hidden border border-slate-850 flex items-center p-[1px]">
+                              <div className="h-full bg-slate-800 rounded-full" style={{ width: `${(currentKart.stats.handling / 0.06) * 100}%` }} />
+                              <div className="h-full bg-purple-500 rounded-full animate-pulse" style={{ width: `${((getUpgradedStats(currentKart.stats).handling - currentKart.stats.handling) / 0.06) * 100}%` }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950 p-2.5 rounded-2xl text-[9.5px] border border-slate-850 text-gray-400 font-mono text-center mt-2">
+                          💡 튜닝 강화 레벨은 차고 내 전체 카트바디 기체에 공통 영구 적용됩니다.
                         </div>
                       </div>
 
-                      {/* Metric 2 */}
-                      <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
-                        <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
-                          <span>추진 가속력 (ACCELERATION)</span>
-                          <span className="text-cyan-400 font-black">{(currentKart.stats.accel * 10000).toFixed(0)} CP</span>
+                      {/* Right Column: Interactive Upgrade Control */}
+                      <div className="lg:col-span-7 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
+                        <div className="border-b border-white/5 pb-2.5 flex items-center justify-between">
+                          <h4 className="text-sm font-black text-white flex items-center space-x-2">
+                            <span>🔧</span>
+                            <span>성능 엔지니어링 메인 프레임</span>
+                          </h4>
+                          <span className="text-[10px] font-mono text-amber-400 font-black tracking-wider px-2.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/25 animate-pulse">
+                            ACTIVE STAGE POWER: Level {(Object.values(tuningUpgrades) as number[]).reduce((a, b) => a + b, 0)}
+                          </span>
                         </div>
-                        <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-                          <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(currentKart.stats.accel / 0.04) * 100}%` }} />
-                        </div>
-                      </div>
 
-                      {/* Metric 3 */}
-                      <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
-                        <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
-                          <span>드리프트 충전력 (DRIFT ACCEL)</span>
-                          <span className="text-yellow-400 font-black">{(currentKart.stats.drift * 50).toFixed(0)} DP</span>
-                        </div>
-                        <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-                          <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${(currentKart.stats.drift / 3.0) * 100}%` }} />
-                        </div>
-                      </div>
+                        {/* Upgrade Selection Rows */}
+                        <div className="flex-1 flex flex-col justify-center space-y-3.5 py-3 font-mono">
+                          {(() => {
+                            const upgradeFields = [
+                              { key: 'speed', title: '엔진 보어업 대구경 튜닝 (Speed)', icon: '⚡', color: 'bg-pink-500', desc: '기체의 최고 한계 속도를 대폭 증강 제어합니다.' },
+                              { key: 'accel', title: '나이트로 하이퍼 부스터 인젝션 (Accel)', icon: '🚀', color: 'bg-cyan-405', desc: '초동 가속 반응속도 및 부스터 연소 추진 속도를 한계 돌파시킵니다.', customCyan: true },
+                              { key: 'drift', title: '특수 하중 재분배 섀시 경량화 (Drift)', icon: '↩', color: 'bg-yellow-405', desc: '코너 드리프트 활주 시 부스터 게이지의 충전 차징 속도를 촉진합니다.', customYellow: true },
+                              { key: 'handling', title: '초밀착 레이싱 소프트 타이어 (Handling)', icon: '🌀', color: 'bg-purple-500', desc: '미끄러짐 계수를 낮추고 곡선 조향 시 미장 반사 응답율을 강화합니다.', customPurple: true }
+                            ];
 
-                      {/* Metric 4 */}
-                      <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
-                        <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
-                          <span>코너링 탈출 감도 (HANDLING RATE)</span>
-                          <span className="text-purple-400 font-black">{(currentKart.stats.handling * 1000).toFixed(0)} HP</span>
-                        </div>
-                        <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
-                          <div className="h-full bg-purple-500 rounded-full" style={{ width: `${(currentKart.stats.handling / 0.051) * 100}%` }} />
+                            const getCost = (lvl: number) => {
+                              if (lvl === 1) return 250;
+                              if (lvl === 2) return 450;
+                              if (lvl === 3) return 700;
+                              if (lvl === 4) return 1200;
+                              return 0; // Max level
+                            };
+
+                            return upgradeFields.map((field) => {
+                              const currentLevel = tuningUpgrades[field.key] || 1;
+                              const cost = getCost(currentLevel);
+                              const isMax = currentLevel >= 5;
+
+                              const handleUpgradeAction = () => {
+                                triggerAudioInit();
+                                if (isMax) return;
+                                if (gold >= cost) {
+                                  setGold(prev => prev - cost);
+                                  const updated = { ...tuningUpgrades, [field.key]: currentLevel + 1 };
+                                  setTuningUpgrades(updated);
+                                  showHUDNotification('기체 영구 튜닝 성공', `${field.title} Lv.${currentLevel + 1} 강화 성공!`);
+                                  triggerComicTextPop('SUCCESS!', '#eab308');
+                                  try {
+                                    AudioEngine.playBoost();
+                                  } catch (e) {}
+                                } else {
+                                  showHUDNotification('강화 크리스탈 부족', '개조 및 성능 부품을 튜닝하기 위한 보유 골드가 부족합니다.');
+                                  triggerComicTextPop('NO GOLD', '#ef4444');
+                                }
+                              };
+
+                              return (
+                                <div key={field.key} className="bg-slate-950 p-3 rounded-2xl border border-slate-850 flex items-center justify-between space-x-3 hover:border-slate-750 transition-colors">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-2 flex-wrap gap-1">
+                                      <span className="text-base">{field.icon}</span>
+                                      <span className="text-xs font-black text-white truncate max-w-[180px] sm:max-w-none">{field.title}</span>
+                                      <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20 font-mono">Lv.{currentLevel}</span>
+                                    </div>
+                                    <p className="text-[9px] text-gray-400 mt-1 leading-relaxed max-w-[340px] truncate sm:whitespace-normal">
+                                      {field.desc}
+                                    </p>
+
+                                    {/* Level Dots Track */}
+                                    <div className="flex space-x-1 mt-2">
+                                      {[1, 2, 3, 4, 5].map((lvl) => (
+                                        <div 
+                                          key={lvl} 
+                                          className={`w-[26px] h-1.5 rounded-full transition-all duration-300 ${
+                                            lvl <= currentLevel 
+                                              ? field.customCyan ? 'bg-cyan-400' : field.customYellow ? 'bg-yellow-400' : field.customPurple ? 'bg-purple-500' : 'bg-pink-500'
+                                              : 'bg-slate-800'
+                                          }`} 
+                                        />
+                                      ))}
+                                    </div>
+                                  </div>
+
+                                  <div className="shrink-0">
+                                    {isMax ? (
+                                      <span className="text-[9px] font-black text-emerald-450 text-emerald-400 bg-emerald-950/40 border border-emerald-900/50 px-2.5 py-1.5 rounded-xl uppercase tracking-wider block text-center">
+                                        MAXED
+                                      </span>
+                                    ) : (
+                                      <button
+                                        onClick={handleUpgradeAction}
+                                        className="px-3 py-1.5 cursor-pointer rounded-xl bg-gradient-to-r from-amber-500 to-yellow-400 hover:brightness-110 active:scale-95 text-slate-950 text-[10.5px] font-black flex items-center space-x-1 shadow-md hover:shadow-yellow-500/10 transition-all whitespace-nowrap"
+                                      >
+                                        <span>⚙️</span>
+                                        <span>{cost}G 강화</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
                         </div>
                       </div>
                     </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-stretch">
+                      {/* Left sub-rhythm: Selection list */}
+                      <div className="lg:col-span-5 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-5 flex flex-col space-y-4 shadow-xl">
+                        <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                          <h3 className="text-sm font-black text-pink-400 flex items-center space-x-2">
+                            <Trophy size={16} />
+                            <span>내 차고 기어 리스트</span>
+                          </h3>
+                          <span className="text-[10px] text-gray-405 text-gray-400 font-mono">가챠 소유권: {unlockedKarts.length} / {KARTS.length}</span>
+                        </div>
 
-                    <div className="bg-slate-950/80 rounded-2xl p-2 px-4 border border-dashed border-slate-850 flex justify-between items-center text-[10.5px]">
-                      <span className="text-gray-450 text-gray-400 font-medium">선택한 카트는 레이싱 중 실시간 3D 가속도 모델로 구현됩니다.</span>
-                      <span className="text-pink-500 font-black">★ ACTIVE RETAINED</span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto pr-1">
+                          {KARTS.map((k) => {
+                            const isUnlocked = unlockedKarts.includes(k.id);
+                            const isEquipped = selectedKartId === k.id;
+                            return (
+                              <button
+                                key={k.id}
+                                disabled={!isUnlocked}
+                                onClick={() => {
+                                  triggerAudioInit();
+                                  setSelectedKartId(k.id);
+                                }}
+                                className={`p-3 rounded-2xl border text-left cursor-pointer transition-all flex flex-col justify-between h-[85px] relative overflow-hidden ${
+                                  !isUnlocked 
+                                    ? 'opacity-35 bg-slate-950/80 border-slate-900 cursor-not-allowed' 
+                                    : isEquipped 
+                                      ? 'bg-pink-950/25 border-pink-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.3)]' 
+                                      : 'bg-slate-950 border-slate-800/80 hover:border-slate-700 hover:bg-slate-900'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-xs font-black truncate max-w-[130px]">{k.name}</span>
+                                  <div className="w-3.5 h-3.5 rounded-full border border-white/20 shadow-sm" style={{ backgroundColor: `#${k.color.toString(16).padStart(6, '0')}` }} />
+                                </div>
+
+                                <div className="flex justify-between items-end mt-2">
+                                  <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                    k.rarity === 'Legendary' ? 'bg-purple-900/30 text-purple-400 border border-purple-800/40' : k.rarity === 'Rare' ? 'bg-cyan-900/30 text-cyan-400 border border-cyan-800/40' : 'bg-slate-800 text-slate-400'
+                                  }`}>
+                                    {isUnlocked ? k.rarity : '미획득 LC'}
+                                  </span>
+                                  {isUnlocked && isEquipped && (
+                                    <span className="bg-pink-500 text-slate-950 text-[8px] font-black px-1.5 rounded uppercase font-mono tracking-widest scale-95 origin-right">
+                                      EQUIPPED
+                                    </span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Right sub-rhythm: Detailed radar status metrics with visual meters */}
+                      <div className="lg:col-span-7 bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-6 flex flex-col justify-between shadow-xl">
+                        <div className="border-b border-white/5 pb-3">
+                          <div className="flex items-center justify-between">
+                            <span className={`text-[9px] font-black px-2.5 py-0.5 rounded uppercase tracking-wider ${
+                              currentKart.rarity === 'Legendary' ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' : currentKart.rarity === 'Rare' ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-slate-800 text-slate-400'
+                            }`}>
+                              {currentKart.rarity} 등급 카트바디
+                            </span>
+                            <div className="flex items-center space-x-1.5 text-xs text-gray-400">
+                              <span className="font-bold">기어 컬러:</span>
+                              <span className="w-4 h-4 rounded-full border border-white/40 shadow" style={{ backgroundColor: `#${currentKart.color.toString(16).padStart(6, '0')}` }} />
+                            </div>
+                          </div>
+                          <h4 className="text-xl font-black text-white mt-1.5 flex items-center">
+                            <Gauge className="mr-2 text-pink-500" size={18} />
+                            <span>{currentKart.name}</span>
+                          </h4>
+                          <p className="text-xs text-slate-300 mt-2 leading-relaxed h-[42px] overflow-hidden">
+                            {currentKart.description}
+                          </p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 my-4 font-mono">
+                          {/* Metric 1 */}
+                          <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
+                            <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
+                              <span>최고 가속도 성능 (MAX ENTRANCE)</span>
+                              <span className="text-pink-400 font-black">{(currentKart.stats.speed * 180).toFixed(0)} km/h</span>
+                            </div>
+                            <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                              <div className="h-full bg-pink-500 rounded-full" style={{ width: `${(currentKart.stats.speed / 1.7) * 100}%` }} />
+                            </div>
+                          </div>
+
+                          {/* Metric 2 */}
+                          <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
+                            <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
+                              <span>추진 가속력 (ACCELERATION)</span>
+                              <span className="text-cyan-400 font-black">{(currentKart.stats.accel * 10000).toFixed(0)} CP</span>
+                            </div>
+                            <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                              <div className="h-full bg-cyan-400 rounded-full" style={{ width: `${(currentKart.stats.accel / 0.04) * 100}%` }} />
+                            </div>
+                          </div>
+
+                          {/* Metric 3 */}
+                          <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
+                            <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
+                              <span>드리프트 충전력 (DRIFT ACCEL)</span>
+                              <span className="text-yellow-400 font-black">{(currentKart.stats.drift * 50).toFixed(0)} DP</span>
+                            </div>
+                            <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                              <div className="h-full bg-yellow-400 rounded-full" style={{ width: `${(currentKart.stats.drift / 3.0) * 100}%` }} />
+                            </div>
+                          </div>
+
+                          {/* Metric 4 */}
+                          <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-850">
+                            <div className="flex justify-between items-center text-xs font-bold mb-1.5 text-gray-400">
+                              <span>코너링 탈출 감도 (HANDLING RATE)</span>
+                              <span className="text-purple-400 font-black">{(currentKart.stats.handling * 1000).toFixed(0)} HP</span>
+                            </div>
+                            <div className="h-2.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                              <div className="h-full bg-purple-500 rounded-full" style={{ width: `${(currentKart.stats.handling / 0.051) * 100}%` }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950/80 rounded-2xl p-2 px-4 border border-dashed border-slate-850 flex justify-between items-center text-[10.5px]">
+                          <span className="text-gray-450 text-gray-400 font-medium font-mono">선택한 카트는 레이싱 중 실시간 3D 가속도 모델로 구현됩니다.</span>
+                          <span className="text-pink-500 font-black">★ ACTIVE RETAINED</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </motion.div>
               )}
 
@@ -1974,34 +2613,34 @@ export default function App() {
                   </div>
 
                   {/* Dynamic Ghost Partner Setup Dock */}
-                  <div className="mt-5.5 mt-5 bg-slate-950/70 p-4 border border-slate-800 rounded-2xl">
+                  <div className="mt-5 bg-slate-950/70 p-4 border border-slate-800 rounded-2xl">
                     <div className="flex items-center space-x-2 mb-2">
                       <span className="text-sm">👻</span>
                       <h4 className="text-xs font-black uppercase tracking-wider text-cyan-400 font-mono">
-                        타임어택 고스트 드라이버 섀도우 연동 매칭 서비스 (Time Attack Ghost Clone Systems)
+                        고스트 드라이버 연동 (Time Attack Ghost)
                       </h4>
                     </div>
                     <p className="text-[10px] text-slate-400 mb-3.5 leading-snug font-sans">
-                      선택한 트랙을 주행할 때, 최상급 페이스를 보장하는 유령 주행(Ghost) 섀도우 봇을 소환하여 코너링 궤적과 부스터 타이밍을 안전하게 실시간 전송합니다.
+                      내가 달렸던 최고 기록이나 가상의 고스트 가이드 차량을 소환하여 코너링과 기록 단축을 함께 주행하며 연습합니다.
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                       {[
-                        { id: 'none', label: '고스트 비활성 (No Ghost)', desc: '섀도우 고스트 연동을 취소하고 일반 AI 라이벌과 플레이.', icon: '❌', theme: 'border-slate-850 hover:border-slate-700' },
-                        { id: 'my_best', label: '내 최고기록 클론 (My Best)', desc: `내 예전 베스트 주행 대결 (${bestTimes[selectedMapId]?.timeStr || '기록 없음'})`, icon: '👤', theme: 'border-cyan-500/20 hover:border-cyan-400/40' },
-                        { id: 'friend_friend', label: '친구 공인 기록 (Friend Best)', desc: '클럽 서킷 최고 속도를 지닌 절친 주행 데이터 싱크', icon: '👥', theme: 'border-pink-500/20 hover:border-pink-400/40' },
-                        { id: 'rival_top', label: '전설 1위 유령 기록 (1st Record)', desc: '서킷 월드 클래스 랭킹 1위 드라이버의 절대 한계선 라인', icon: '👑', theme: 'border-yellow-500/20 hover:border-yellow-400/40' }
+                        { id: 'none', label: '고스트 가이드 없음', desc: '고스트 없이 라이벌 AI 차량과 일대일 대결을 진행합니다.', icon: '❌', theme: 'border-slate-800 hover:border-slate-700' },
+                        { id: 'my_best', label: '내 최고기록 클론', desc: `내 예전 최고 완주 시간 (${bestTimes[selectedMapId]?.timeStr || '기록 없음'}) 패턴과 매치합니다.`, icon: '👤', theme: 'border-cyan-500/20 hover:border-cyan-400/40' },
+                        { id: 'friend_friend', label: '초대 친구 가이드', desc: '초대한 동료 레이서가 앞서 달린 주행라인을 복제하여 추종합니다.', icon: '👥', theme: 'border-pink-500/20 hover:border-pink-400/40' },
+                        { id: 'rival_top', label: '서킷 월드 챔피언', desc: '서킷 최고 기록 챔피언의 절대 주행선 궤적을 뒤따르며 선을 깎아갑니다.', icon: '👑', theme: 'border-yellow-500/20 hover:border-yellow-400/40' }
                       ].map((opt) => {
-                        // Map internal ghostConfig strings safely
                         const optionIdMapped = opt.id === 'friend_friend' ? 'friend_ghost' : opt.id === 'rival_top' ? 'rival_1st' : opt.id;
                         const isGhostActive = selectedGhostMode === optionIdMapped;
                         return (
                           <button
                             key={opt.id}
+                            type="button"
                             onClick={() => {
                               triggerAudioInit();
                               setSelectedGhostMode(optionIdMapped as any);
-                              showHUDNotification('고스트 드라이버 동기화', `[${opt.label}] 패턴 섀도우가 다음 주행에 준비되었습니다!`);
+                              showHUDNotification('고스트 가이드 동조', `[${opt.label}] 시그널이 다음 주행에 준비되었습니다.`);
                             }}
                             className={`p-2.5 rounded-xl bg-slate-900 border-2 text-left cursor-pointer transition-all ${
                               isGhostActive 
@@ -2038,10 +2677,10 @@ export default function App() {
                   <div className="border-b border-white/5 pb-2 mb-4">
                     <h3 className="text-md font-black text-orange-500 flex items-center space-x-2">
                       <Flame size={18} className="text-orange-500 animate-pulse" />
-                      <span>원하는 레이싱 게임 대결 모드 설정 (In-Game Rules)</span>
+                      <span>원하는 레이싱 경기 규칙 설정 (Play Modes)</span>
                     </h3>
                     <p className="text-[11px] text-gray-400 mt-0.5">
-                      각 모드는 3D 물리 서브엔진 트랙 내에서 서로 다른 가속도 배율, 트랩 획득 여부, 또는 랩 수가 상이하게 적용됩니다.
+                      각 모드는 주행 조건, 완주 바퀴 수, 트랙 내 특수 상자나 수집용 골드 코인 배치 여부가 각기 상이합니다.
                     </p>
                   </div>
 
@@ -2050,7 +2689,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => { triggerAudioInit(); setGameMode('speed'); }}
-                      className={`flex flex-col justify-between p-4.5 p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
+                      className={`flex flex-col justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
                         gameMode === 'speed' 
                           ? 'bg-pink-950/25 border-pink-500 text-white shadow-[0_0_12px_rgba(244,63,94,0.3)]' 
                           : 'bg-slate-950 border-slate-800/80 text-gray-400 hover:border-slate-700 hover:text-white'
@@ -2059,8 +2698,8 @@ export default function App() {
                       <div>
                         <span className="text-[9px] font-black tracking-widest text-pink-500 block uppercase mb-1">STABLE SPEED</span>
                         <h4 className="text-sm font-black text-white">클래식 스피드전</h4>
-                        <p className="text-[10px] text-slate-450 text-slate-400 mt-2 leading-relaxed">
-                          3바퀴를 순수한 드리프트 및 수동 파워 부스터만으로 완주합니다. 극한의 코너 공략 능력을 측정합니다.
+                        <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                          순수한 드리프트 컨트롤과 매끄러운 수동 부스터 활용도만으로 3바퀴 서킷을 전력 완주하며 기록을 세우는 공식 주행 모드입니다.
                         </p>
                       </div>
                       <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">⏱️ 3바퀴 제한 완주</span>
@@ -2070,80 +2709,80 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => { triggerAudioInit(); setGameMode('item'); }}
-                      className={`flex flex-col justify-between p-4.5 p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
+                      className={`flex flex-col justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
                         gameMode === 'item' 
-                          ? 'bg-yellow-955 bg-yellow-950/20 border-yellow-500 text-white shadow-[0_0_12px_rgba(234,179,8,0.3)]' 
-                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-705 text-gray-450 hover:border-slate-700 hover:text-white'
+                          ? 'bg-yellow-950/20 border-yellow-500 text-white shadow-[0_0_12px_rgba(234,179,8,0.3)]' 
+                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-700 hover:text-white'
                       }`}
                     >
                       <div>
                         <span className="text-[9px] font-black tracking-widest text-yellow-500 block uppercase mb-1">ITEM CRASH</span>
-                        <h4 className="text-sm font-black text-white">아이템 파괴전</h4>
+                        <h4 className="text-sm font-black text-white">아이템 대전</h4>
                         <p className="text-[10px] text-slate-450 text-slate-400 mt-2 leading-relaxed">
-                          맵 곳곳에 배치된 3D 아이템 박스를 깨뜨려 미사일(유도 적군 저격), 바나나, 실드, 전방 보조 부스터를 사용합니다.
+                          트랙 도처의 아이템 상자를 획득하여 유도 미사일, 방어용 실드, 속도 부스터, 미끄러짐 바나나 등으로 난투를 펼칩니다.
                         </p>
                       </div>
-                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🎁 복합 확률 로테이터</span>
+                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🎁 복합 아이템전</span>
                     </button>
 
                     {/* Mode 3 */}
                     <button
                       type="button"
                       onClick={() => { triggerAudioInit(); setGameMode('time_attack'); }}
-                      className={`flex flex-col justify-between p-4.5 p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
+                      className={`flex flex-col justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
                         gameMode === 'time_attack' 
                           ? 'bg-cyan-950/25 border-cyan-400 text-white shadow-[0_0_12px_rgba(34,211,238,0.3)]' 
-                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-705 text-gray-450 hover:border-slate-700 hover:text-white'
+                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-700 hover:text-white'
                       }`}
                     >
                       <div>
                         <span className="text-[9px] font-black tracking-widest text-cyan-400 block uppercase mb-1">ONE-LAP SHORT</span>
                         <h4 className="text-sm font-black text-white">1바퀴 타임어택</h4>
                         <p className="text-[10px] text-slate-450 text-slate-400 mt-2 leading-relaxed">
-                          단 한 바퀴(1 Lap)의 혼신의 질주로 골인 시간을 측정합니다. 즉각 결과 확인 및 순위표 등록에 이상적입니다.
+                          길거나 지루한 분리 없이, 깔금하게 한 바퀴(1 Lap) 전 주행으로 코스를 돌파해 즉시 기록 우위를 경신해보세요.
                         </p>
                       </div>
-                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🏁 단 1 Lap 속성 통과</span>
+                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🏁 단 1바퀴 스핀 런</span>
                     </button>
 
                     {/* Mode 4 */}
                     <button
                       type="button"
                       onClick={() => { triggerAudioInit(); setGameMode('ten_laps'); }}
-                      className={`flex flex-col justify-between p-4.5 p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
+                      className={`flex flex-col justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
                         gameMode === 'ten_laps' 
                           ? 'bg-purple-950/25 border-purple-500 text-white shadow-[0_0_12px_rgba(168,85,247,0.3)]' 
-                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-705 text-gray-455 hover:border-slate-700 hover:text-white'
+                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-700 hover:text-white'
                       }`}
                     >
                       <div>
                         <span className="text-[9px] font-black tracking-widest text-purple-400 block uppercase mb-1">ENDURANCE MARATHON</span>
                         <h4 className="text-sm font-black text-white">마라톤 10 Laps</h4>
                         <p className="text-[10px] text-slate-450 text-slate-400 mt-2 leading-relaxed">
-                          집중 주행에 도전합니다. 무려 10 바퀴를 실수없이 완수해야 완주로 판결하며, 높은 Gold 수당이 지급됩니다.
+                          무려 10바퀴에 달하는 마라톤 레이스입니다. 노련한 전용 드리프트 선형과 끈기 있는 집중력으로 장거리 완주 보너스를 획득하세요.
                         </p>
                       </div>
-                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🏃 극강 인내가 요구됨</span>
+                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🏃 10바퀴 집중 주행 코스</span>
                     </button>
 
                     {/* Mode 5 */}
                     <button
                       type="button"
-                      onClick={() => { triggerAudioInit(); setGameMode('super_nitro'); }}
-                      className={`flex flex-col justify-between p-4.5 p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
-                        gameMode === 'super_nitro' 
-                          ? 'bg-orange-950/25 border-orange-500 text-white shadow-[0_0_12px_rgba(249,115,22,0.35)]' 
-                          : 'bg-slate-950 border-slate-800/80 text-gray-300 hover:border-slate-705 text-gray-455 hover:border-slate-700 hover:text-white'
+                      onClick={() => { triggerAudioInit(); setGameMode('coin_rush'); }}
+                      className={`flex flex-col justify-between p-4 rounded-2xl border-2 cursor-pointer transition-all text-left min-h-[170px] ${
+                        gameMode === 'coin_rush' 
+                          ? 'bg-amber-950/25 border-amber-500 text-white shadow-[0_0_12px_rgba(245,158,11,0.35)]' 
+                          : 'bg-slate-950 border-slate-850/80 text-gray-400 hover:border-slate-700 hover:text-white'
                       }`}
                     >
                       <div>
-                        <span className="text-[9px] font-black tracking-widest text-orange-550 text-orange-500 block uppercase mb-1">INFINITE OVERDRIVE</span>
-                        <h4 className="text-sm font-black text-white">무제한 부스터 대전</h4>
-                        <p className="text-[10px] text-slate-450 text-slate-400 mt-2 leading-relaxed">
-                          드리프트 축적 게이지가 없어도 항시 스페이스바를 누를 때마다 무한대의 폭음 가속 부스터를 분사합니다!
+                        <span className="text-[9px] font-black tracking-widest text-amber-550 text-amber-500 block uppercase mb-1">COIN RUSH MODE</span>
+                        <h4 className="text-sm font-black text-white">코인 수집 대전</h4>
+                        <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                          트랙마다 보석처럼 생겨나는 연쇄 코인들을 직접 충돌 수집하는 보너스 파밍 대전입니다. 대량의 골드를 쉽게 파밍할 수 있습니다.
                         </p>
                       </div>
-                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">🚀 6배 한계 속 가속</span>
+                      <span className="text-[9px] font-mono text-slate-500 font-black block mt-2">💰 황금 코인 레이스</span>
                     </button>
                   </div>
                 </motion.div>
@@ -2671,12 +3310,15 @@ export default function App() {
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                             {[
-                              { id: '초보 레이서', label: '초보 레이서', desc: '초기 무료 제공' },
-                              { id: '기동엔진 챔프', label: '기동엔진 챔프', desc: '기본 업적 보상' },
-                              { id: '은하계 타키온', label: '은하계 타키온', desc: '타임 레이싱 훈련생' },
-                              { id: '다이아 정복자', label: '다이아 정복자', desc: '최상위 리그 타이틀' },
-                              { id: '드리프트 달인', label: '드리프트 달인', desc: '드리프트 훈련 특화' },
-                              { id: '슈퍼 캡슐 럭키맨', label: '슈퍼 캡슐 럭키맨', desc: '캡슐 가챠 애호가 전용' }
+                              { id: '초보 라이더', label: '초보 라이더', desc: '초기 기본 제공 칭호' },
+                              { id: '동네 한바퀴', label: '동네 한바퀴', desc: '트랙 산책이 특기' },
+                              { id: '아스팔트 마스터', label: '아스팔트 마스터', desc: '드리프트 매니아 15회 보상' },
+                              { id: '포뮬러 라이더', label: '포뮬러 라이더', desc: '질풍노도 부스터 10회 보상' },
+                              { id: '바람의 지배자', label: '바람의 지배자', desc: '그랜드 투어러 서킷 5회 보상' },
+                              { id: '수집 대마왕', label: '수집 대마왕', desc: '차고지 대부 뽑기 3회 보상' },
+                              { id: '빛의 속도', label: '빛의 속도', desc: '한계 돌파 65초 미만 보상' },
+                              { id: '신의 경지', label: '신의 경지', desc: '무결점 드라이버 무충돌 보상' },
+                              { id: '광속 지배자', label: '광속 지배자', desc: '모든 맵 28초 이내 완주 보상' }
                             ].map((tit) => {
                               const isOwned = unlockedTitles.includes(tit.id);
                               const isEquipped = selectedTitle === tit.id;
@@ -2730,13 +3372,14 @@ export default function App() {
                             차고의 카트 바디 실시간 도색을 변경하는 고농도 특수 알루미늄 나노 입자 스킨 시스템입니다. 게임 실행 시 카트에 즉각 반영됩니다!
                           </span>
 
-                          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                           <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
                             {[
                               { id: 'default', label: '오리지널 엔진', desc: '고유 카트 기본 배색', hex: '#6366f1' },
                               { id: 'magma_red', label: '화염 마그마 레드', desc: '붉은 화산 특수 도장', hex: '#ef4444' },
                               { id: 'diamond_silver', label: '다이아 플래티넘', desc: '백금 실버 실린더 도장', hex: '#cbd5e1' },
                               { id: 'midnight_obsidian', label: '미드나잇 흑옵', desc: '매혹적인 밤하늘 흑색', hex: '#090d16' },
-                              { id: 'emerald_gold', label: '에메랄드 포레스트', desc: '신비의 옥색 골드 배색', hex: '#10b981' }
+                              { id: 'emerald_gold', label: '에메랄드 포레스트', desc: '신비의 옥색 골드 배색', hex: '#10b981' },
+                              { id: 'neon_pulse', label: '네온 펄스', desc: '도전 특전 초광속 핑크&사이언 도색', hex: '#06b6d4' }
                             ].map((sk) => {
                               const isOwned = unlockedSkins.includes(sk.id);
                               const isEquipped = selectedSkinColor === sk.id;
@@ -3122,6 +3765,149 @@ export default function App() {
         </div>
       )}
 
+      {/* --- VS SCREEN LAYER --- */}
+      {gameState === 'vsscreen' && (
+        <div className="absolute inset-0 z-50 overflow-hidden bg-slate-950 flex flex-col justify-between p-6 md:p-12 select-none">
+          {/* Top banner */}
+          <div className="text-center w-full mt-4 animate-fade-in">
+            <span className="text-[10px] font-black tracking-widest text-cyan-400 uppercase bg-cyan-950/50 px-4 py-1.5 border border-cyan-850 border-cyan-800/30 rounded-full font-mono">
+              MATCH UP PROFILE MATCH
+            </span>
+            <h2 className="text-3xl mt-3 font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-rose-500 to-amber-400 italic tracking-wider font-display">
+              {currentMap?.name || '레이서 매치업'}
+            </h2>
+            <p className="text-[11px] text-gray-400 mt-1">곧 경기가 시작됩니다! 양측 드라이버 정보가 조율 중입니다.</p>
+          </div>
+
+          {/* Grid matching */}
+          <div className="my-auto grid grid-cols-1 md:grid-cols-11 gap-4 items-center max-w-5xl mx-auto w-full relative">
+            
+            {/* Player 1 (Left Rider) */}
+            <div className="col-span-1 md:col-span-4 bg-slate-900/60 border-2 border-cyan-500/40 p-6 rounded-3xl backdrop-blur-lg shadow-[0_0_25px_rgba(6,182,212,0.15)] flex flex-col items-center text-center">
+              <div className="relative w-24 h-24 rounded-full flex items-center justify-center bg-cyan-950 border-4 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                {/* Visual Avatar color representation based on skin */}
+                <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl font-display" style={{ 
+                  backgroundColor: selectedSkinColor === 'magma_red' ? '#ef4444' : 
+                                   selectedSkinColor === 'diamond_silver' ? '#cbd5e1' : 
+                                   selectedSkinColor === 'midnight_obsidian' ? '#090d16' : 
+                                   selectedSkinColor === 'emerald_gold' ? '#10b981' : 
+                                   selectedSkinColor === 'neon_pulse' ? '#06b6d4' : '#6366f1'
+                }}>
+                  👤
+                </div>
+                {/* Aura Indicator Name Badge */}
+                {selectedAuraId !== 'none' && (
+                  <span className="absolute -bottom-2 bg-gradient-to-r from-cyan-500 to-blue-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full border border-cyan-300/30 uppercase animate-pulse font-mono">
+                    {AURAS.find(a => a.id === selectedAuraId)?.name || 'AURA'}
+                  </span>
+                )}
+              </div>
+              <h3 className="text-xl font-black text-white mt-4">{playerNameInput || '플레이어'}</h3>
+              <span className="text-xs text-yellow-400 font-bold bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-500/15 mt-1.5 font-sans">
+                🏷️ {selectedTitle || '초보 라이더'}
+              </span>
+
+              <div className="w-full mt-4 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 text-left text-xs text-slate-300">
+                <div className="flex justify-between py-1 border-b border-white/5">
+                  <span className="text-gray-500 text-[11px]">카트 바디</span>
+                  <span className="font-extrabold text-white text-[11px]">{currentKart.name}</span>
+                </div>
+                <div className="flex justify-between py-1">
+                  <span className="text-gray-500 text-[11px]">라이드 테마 스킨</span>
+                  <span className="font-extrabold text-cyan-400 text-[11px]">
+                    {selectedSkinColor === 'default' ? '오리지널 엔진' : 
+                     selectedSkinColor === 'magma_red' ? '화염 마그마' : 
+                     selectedSkinColor === 'diamond_silver' ? '다이아 실버' : 
+                     selectedSkinColor === 'midnight_obsidian' ? '미드나잇 블랙' : 
+                     selectedSkinColor === 'emerald_gold' ? '에메랄드 특장' : '네온 펄스 스킨'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* VS CENTER MOTIONS */}
+            <div className="col-span-1 md:col-span-3 text-center flex flex-col justify-center items-center py-4">
+              <div className="w-20 h-20 bg-gradient-to-br from-pink-500 to-rose-600 rounded-3xl flex items-center justify-center transform rotate-45 shadow-[0_0_30px_rgba(244,63,94,0.45)]">
+                <span className="text-3xl font-black text-white italic transform -rotate-45 tracking-widest font-display text-stroke text-shadow">VS</span>
+              </div>
+              <span className="text-[10px] text-pink-400 font-mono tracking-widest font-bold uppercase mt-6 bg-pink-950/50 px-3 py-1 rounded-full border border-pink-900/30">
+                {gameMode === 'speed' ? '스피드 매치' : gameMode === 'item' ? '아이템 대전' : gameMode === 'coin_rush' ? '골드 코인 수집전' : gameMode === 'ten_laps' ? '10바퀴 레이싱' : '타임어택 트라이얼'}
+              </span>
+            </div>
+
+            {/* Player 2 (Right Rider) */}
+            <div className="col-span-1 md:col-span-4 bg-slate-900/60 border-2 border-rose-500/40 p-6 rounded-3xl backdrop-blur-lg shadow-[0_0_25px_rgba(244,63,94,0.15)] flex flex-col items-center text-center">
+              {(() => {
+                let p2Name = '라이벌 AI';
+                let p2Title = '폭풍의 독주 주행마';
+                let p2Kart = '블랙 팬서 (Rival Mode)';
+                let p2SkinColor = 'default';
+                let p2Aura = 'none';
+
+                if (isMultiplayerActive) {
+                  const other = participants.find(p => p.peerId !== netManagerRef.current?.myInfo.peerId);
+                  if (other) {
+                    p2Name = other.name || '동료 초대 레이서';
+                    p2Title = other.selectedTitle || '경기 초대자';
+                    const otKart = KARTS.find(k => k.id === other.kartId) || KARTS[0];
+                    p2Kart = otKart.name;
+                    p2SkinColor = other.selectedSkinColor || 'default';
+                    p2Aura = other.selectedAuraId || 'none';
+                  }
+                }
+
+                return (
+                  <>
+                    <div className="relative w-24 h-24 rounded-full flex items-center justify-center bg-rose-950 border-4 border-rose-550 border-rose-500 shadow-[0_0_15px_rgba(244,63,94,0.3)]">
+                      <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl font-display" style={{ 
+                        backgroundColor: p2SkinColor === 'magma_red' ? '#ef4444' : 
+                                         p2SkinColor === 'diamond_silver' ? '#cbd5e1' : 
+                                         p2SkinColor === 'midnight_obsidian' ? '#090d16' : 
+                                         p2SkinColor === 'emerald_gold' ? '#10b981' : 
+                                         p2SkinColor === 'neon_pulse' ? '#06b6d4' : '#ec4899'
+                      }}>
+                        👤
+                      </div>
+                      {p2Aura !== 'none' && (
+                        <span className="absolute -bottom-2 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[8px] font-black px-2 py-0.5 rounded-full border border-rose-300/30 uppercase animate-pulse font-mono">
+                          {AURAS.find(a => a.id === p2Aura)?.name || 'AURA'}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="text-xl font-black text-white mt-4">{p2Name}</h3>
+                    <span className="text-xs text-yellow-400 font-bold bg-yellow-400/10 px-3 py-1 rounded-full border border-yellow-500/15 mt-1.5 font-sans">
+                      🏷️ {p2Title}
+                    </span>
+
+                    <div className="w-full mt-4 bg-slate-950/80 p-3 rounded-2xl border border-slate-800 text-left text-xs text-slate-300">
+                      <div className="flex justify-between py-1 border-b border-white/5">
+                        <span className="text-gray-500 text-[11px]">카트 바디</span>
+                        <span className="font-extrabold text-white text-[11px]">{p2Kart}</span>
+                      </div>
+                      <div className="flex justify-between py-1">
+                        <span className="text-gray-500 text-[11px]">라이드 테마 스킨</span>
+                        <span className="font-extrabold text-rose-400 text-[11px]">
+                          {p2SkinColor === 'default' ? '오리지널 엔진' : 
+                           p2SkinColor === 'magma_red' ? '화염 마그마' : 
+                           p2SkinColor === 'diamond_silver' ? '다이아 실버' : 
+                           p2SkinColor === 'midnight_obsidian' ? '미드나잇 블랙' : 
+                           p2SkinColor === 'emerald_gold' ? '에메랄드 특장' : '네온 펄스 스킨'}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* Spacer */}
+          <div className="text-center pb-4 text-[10px] text-slate-500 tracking-wide font-mono">
+            READY TO DRIVE... 트랙 라인을 주입하며 대기 시그널을 동조화하고 있습니다.
+          </div>
+        </div>
+      )}
+
       {/* --- COUNTDOWN LAYER --- */}
       {gameState === 'countdown' && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/85 select-none font-display text-8xl md:text-9xl text-pink-500 font-black">
@@ -3320,82 +4106,150 @@ export default function App() {
           {/* Floating Virtual Touch Controller for Mobile Mode */}
           {controlMode === 'mobile' && (
             <div className="absolute inset-x-0 bottom-28 md:bottom-24 z-40 flex justify-between px-4 sm:px-10 pointer-events-none select-none">
-              {/* LEFT SIDE: STEERING BUTTONS */}
-              <div className="flex space-x-4 pointer-events-auto">
-                {/* TURN LEFT (ArrowLeft) */}
-                <button
-                  onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = true; }}
-                  onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = false; }}
-                  onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = false; }}
-                  onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = true; }}
-                  onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowLeft'] = false; }}
-                  onMouseLeave={() => { keysPressedRef.current['ArrowLeft'] = false; }}
-                  onPointerDown={(e) => {
-                    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-                    keysPressedRef.current['ArrowLeft'] = true;
+              {/* LEFT SIDE: STEERING OVAL DRAG PAD */}
+              <div className="flex items-center pointer-events-auto">
+                <div
+                  id="mobile-steer-pad"
+                  className="relative w-56 h-20 bg-slate-950/95 border-4 border-cyan-500/40 rounded-full flex items-center justify-between px-6 shadow-[0_0_20px_rgba(6,182,212,0.3)] overflow-hidden cursor-pointer select-none touch-none"
+                  onTouchStart={(e) => {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const touch = e.targetTouches[0];
+                    const x = touch.clientX - rect.left;
+                    let ratio = (x / rect.width) * 2 - 1;
+                    ratio = Math.max(-1, Math.min(1, ratio));
+                    setMobileSteerRatio(ratio);
+                    
+                    if (ratio < -0.15) {
+                      keysPressedRef.current['ArrowLeft'] = true;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    } else if (ratio > 0.15) {
+                      keysPressedRef.current['ArrowRight'] = true;
+                      keysPressedRef.current['ArrowLeft'] = false;
+                    } else {
+                      keysPressedRef.current['ArrowLeft'] = false;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    }
                   }}
-                  onPointerUp={() => { keysPressedRef.current['ArrowLeft'] = false; }}
-                  onPointerCancel={() => { keysPressedRef.current['ArrowLeft'] = false; }}
-                  onPointerLeave={() => { keysPressedRef.current['ArrowLeft'] = false; }}
-                  className="w-20 h-20 rounded-full bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 text-white border-4 border-cyan-500/50 active:border-cyan-400 flex items-center justify-center text-3xl font-black shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                  onTouchMove={(e) => {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const touch = e.targetTouches[0];
+                    const x = touch.clientX - rect.left;
+                    let ratio = (x / rect.width) * 2 - 1;
+                    ratio = Math.max(-1, Math.min(1, ratio));
+                    setMobileSteerRatio(ratio);
+                    
+                    if (ratio < -0.15) {
+                      keysPressedRef.current['ArrowLeft'] = true;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    } else if (ratio > 0.15) {
+                      keysPressedRef.current['ArrowRight'] = true;
+                      keysPressedRef.current['ArrowLeft'] = false;
+                    } else {
+                      keysPressedRef.current['ArrowLeft'] = false;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    }
+                  }}
+                  onTouchEnd={(e) => {
+                    e.preventDefault();
+                    setMobileSteerRatio(0);
+                    keysPressedRef.current['ArrowLeft'] = false;
+                    keysPressedRef.current['ArrowRight'] = false;
+                  }}
+                  onTouchCancel={(e) => {
+                    e.preventDefault();
+                    setMobileSteerRatio(0);
+                    keysPressedRef.current['ArrowLeft'] = false;
+                    keysPressedRef.current['ArrowRight'] = false;
+                  }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const onMouseMove = (moveEvent: MouseEvent) => {
+                      const x = moveEvent.clientX - rect.left;
+                      let ratio = (x / rect.width) * 2 - 1;
+                      ratio = Math.max(-1, Math.min(1, ratio));
+                      setMobileSteerRatio(ratio);
+                      if (ratio < -0.15) {
+                        keysPressedRef.current['ArrowLeft'] = true;
+                        keysPressedRef.current['ArrowRight'] = false;
+                      } else if (ratio > 0.15) {
+                        keysPressedRef.current['ArrowRight'] = true;
+                        keysPressedRef.current['ArrowLeft'] = false;
+                      } else {
+                        keysPressedRef.current['ArrowLeft'] = false;
+                        keysPressedRef.current['ArrowRight'] = false;
+                      }
+                    };
+                    const onMouseUp = () => {
+                      window.removeEventListener('mousemove', onMouseMove);
+                      window.removeEventListener('mouseup', onMouseUp);
+                      setMobileSteerRatio(0);
+                      keysPressedRef.current['ArrowLeft'] = false;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    };
+                    window.addEventListener('mousemove', onMouseMove);
+                    window.addEventListener('mouseup', onMouseUp);
+                    
+                    const x = e.clientX - rect.left;
+                    let ratio = (x / rect.width) * 2 - 1;
+                    ratio = Math.max(-1, Math.min(1, ratio));
+                    setMobileSteerRatio(ratio);
+                    if (ratio < -0.15) {
+                      keysPressedRef.current['ArrowLeft'] = true;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    } else if (ratio > 0.15) {
+                      keysPressedRef.current['ArrowRight'] = true;
+                      keysPressedRef.current['ArrowLeft'] = false;
+                    } else {
+                      keysPressedRef.current['ArrowLeft'] = false;
+                      keysPressedRef.current['ArrowRight'] = false;
+                    }
+                  }}
+                  onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 >
-                  ◀
-                </button>
+                  <span className={`text-xl font-black transition-colors ${mobileSteerRatio < -0.15 ? 'text-cyan-400 scale-110 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-slate-700'}`}>◀</span>
+                  <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pointer-events-none">STEER</span>
+                  <span className={`text-xl font-black transition-colors ${mobileSteerRatio > 0.15 ? 'text-cyan-400 scale-110 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-slate-700'}`}>▶</span>
+                  
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className="w-[100px] h-[3px] bg-slate-800 rounded-full relative">
+                      <div 
+                        className="absolute top-0 bottom-0 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-full"
+                        style={{
+                          left: mobileSteerRatio < 0 ? `${50 + mobileSteerRatio * 50}%` : '50%',
+                          right: mobileSteerRatio > 0 ? `${50 - mobileSteerRatio * 50}%` : '50%'
+                        }}
+                      />
+                    </div>
+                  </div>
 
-                {/* TURN RIGHT (ArrowRight) */}
-                <button
-                  onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = true; }}
-                  onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = false; }}
-                  onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = false; }}
-                  onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = true; }}
-                  onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowRight'] = false; }}
-                  onMouseLeave={() => { keysPressedRef.current['ArrowRight'] = false; }}
-                  onPointerDown={(e) => {
-                    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-                    keysPressedRef.current['ArrowRight'] = true;
-                  }}
-                  onPointerUp={() => { keysPressedRef.current['ArrowRight'] = false; }}
-                  onPointerCancel={() => { keysPressedRef.current['ArrowRight'] = false; }}
-                  onPointerLeave={() => { keysPressedRef.current['ArrowRight'] = false; }}
-                  className="w-20 h-20 rounded-full bg-slate-900/90 active:bg-cyan-500 active:text-slate-950 text-white border-4 border-cyan-500/50 active:border-cyan-400 flex items-center justify-center text-3xl font-black shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
-                >
-                  ▶
-                </button>
+                  <div 
+                    className="absolute top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-gradient-to-b from-cyan-400 to-indigo-500 shadow-[0_0_12px_rgba(6,182,212,0.6)] flex items-center justify-center transition-all duration-75 ease-out pointer-events-none select-none touch-none"
+                    style={{
+                      left: `calc(50% + ${mobileSteerRatio * 32}% - 24px)`
+                    }}
+                  >
+                    <div className="w-8 h-8 rounded-full bg-slate-950 flex items-center justify-center">
+                      <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* RIGHT SIDE: DRIVE & EXTREME BUTTONS */}
+              {/* RIGHT SIDE: TOUCH DRIVE SYSTEM WITHOUT ACCEL (AUTO-ACCEL ACTIVE) */}
               <div className="flex flex-col items-end space-y-4 pointer-events-auto">
-                <div className="flex space-x-3">
-                  {/* SPEED ITEM SLINGER / BOOST ACTION (Space / triggerItemSlinger) */}
+                <div className="flex items-center space-x-3 pr-4">
+                  {/* SPEED ITEM SLINGER / BOOST ACTION */}
                   <button
                     onTouchStart={(e) => { e.preventDefault(); triggerItemSlinger(); }}
                     onMouseDown={(e) => { e.preventDefault(); triggerItemSlinger(); }}
-                    onPointerDown={() => { triggerItemSlinger(); }}
-                    className="w-16 h-16 rounded-full bg-gradient-to-tr from-pink-500 via-rose-500 to-amber-500 active:brightness-125 border-4 border-pink-500/40 flex flex-col items-center justify-center text-white font-black shadow-2xl transition-all active:scale-90 animate-pulse cursor-pointer select-none touch-none"
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    className="w-18 h-18 rounded-full bg-gradient-to-tr from-pink-500 via-rose-500 to-amber-500 active:brightness-125 border-4 border-pink-500/40 flex flex-col items-center justify-center text-white font-black shadow-2xl transition-all active:scale-95 animate-pulse cursor-pointer select-none touch-none"
                   >
                     <span className="text-xl leading-none">⚡</span>
                     <span className="text-[8px] font-mono tracking-tight mt-0.5 leading-none">BOOST</span>
-                  </button>
-
-                  {/* DRIFT CLUTCH (Shift) */}
-                  <button
-                    onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = true; }}
-                    onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
-                    onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
-                    onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = true; }}
-                    onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
-                    onMouseLeave={() => { keysPressedRef.current['Shift'] = false; }}
-                    onPointerDown={(e) => {
-                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-                      keysPressedRef.current['Shift'] = true;
-                    }}
-                    onPointerUp={() => { keysPressedRef.current['Shift'] = false; }}
-                    onPointerCancel={() => { keysPressedRef.current['Shift'] = false; }}
-                    onPointerLeave={() => { keysPressedRef.current['Shift'] = false; }}
-                    className="w-20 h-20 rounded-3xl bg-slate-900/90 active:bg-yellow-500 active:text-slate-950 text-white border-4 border-yellow-500/50 active:border-yellow-400 flex flex-col items-center justify-center shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
-                  >
-                    <span className="text-2xl leading-none">↩</span>
-                    <span className="text-[10px] font-bold mt-1 tracking-wider font-display uppercase">DRIFT</span>
                   </button>
                 </div>
 
@@ -3408,37 +4262,25 @@ export default function App() {
                     onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = true; }}
                     onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowDown'] = false; }}
                     onMouseLeave={() => { keysPressedRef.current['ArrowDown'] = false; }}
-                    onPointerDown={(e) => {
-                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-                      keysPressedRef.current['ArrowDown'] = true;
-                    }}
-                    onPointerUp={() => { keysPressedRef.current['ArrowDown'] = false; }}
-                    onPointerCancel={() => { keysPressedRef.current['ArrowDown'] = false; }}
-                    onPointerLeave={() => { keysPressedRef.current['ArrowDown'] = false; }}
-                    className="w-16 h-16 rounded-2xl bg-slate-900/90 active:bg-red-500 active:text-white text-white border-4 border-red-500/50 active:border-red-400 flex items-center justify-center text-2xl font-black shadow-xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    className="w-20 h-20 rounded-2xl bg-slate-950/90 border-4 border-red-500/50 active:bg-red-500 active:border-red-400 active:text-white text-red-500 flex items-center justify-center text-2xl font-black shadow-xl transition-all active:scale-90 select-none touch-none cursor-pointer"
                   >
                     ▼
                   </button>
 
-                  {/* ENGINE GO ACCEL (ArrowUp) */}
+                  {/* DRIFT CLUTCH (Shift) - DRIFT PLACED AT ACCEL HAND REACH POSITION & EXTRA ENLARGED */}
                   <button
-                    onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = true; }}
-                    onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = false; }}
-                    onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = false; }}
-                    onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = true; }}
-                    onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['ArrowUp'] = false; }}
-                    onMouseLeave={() => { keysPressedRef.current['ArrowUp'] = false; }}
-                    onPointerDown={(e) => {
-                      try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
-                      keysPressedRef.current['ArrowUp'] = true;
-                    }}
-                    onPointerUp={() => { keysPressedRef.current['ArrowUp'] = false; }}
-                    onPointerCancel={() => { keysPressedRef.current['ArrowUp'] = false; }}
-                    onPointerLeave={() => { keysPressedRef.current['ArrowUp'] = false; }}
-                    className="w-24 h-24 rounded-full bg-slate-900/90 active:bg-green-500 active:text-slate-950 text-green-450 text-green-400 border-4 border-green-500/50 active:border-green-400 flex flex-col items-center justify-center shadow-2xl transition-all active:scale-[0.85] select-none touch-none cursor-pointer"
+                    onTouchStart={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = true; }}
+                    onTouchEnd={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
+                    onTouchCancel={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
+                    onMouseDown={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = true; }}
+                    onMouseUp={(e) => { e.preventDefault(); keysPressedRef.current['Shift'] = false; }}
+                    onMouseLeave={() => { keysPressedRef.current['Shift'] = false; }}
+                    onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                    className="w-32 h-32 rounded-full bg-slate-950/95 border-4 border-yellow-500 text-yellow-400 shadow-[0_0_25px_rgba(234,179,8,0.45)] active:bg-yellow-500 active:text-slate-950 flex flex-col items-center justify-center transition-all duration-75 active:scale-90 select-none touch-none cursor-pointer"
                   >
-                    <span className="text-[10px] tracking-widest font-black leading-none mb-1">ACCEL</span>
-                    <span className="text-3xl leading-none">▲</span>
+                    <span className="text-4xl leading-none">↩</span>
+                    <span className="text-xs font-black mt-2 tracking-widest font-display uppercase">DRIFT</span>
                   </button>
                 </div>
               </div>
@@ -3542,6 +4384,129 @@ export default function App() {
               <div className="text-[9.5px] font-black text-gray-500 leading-none">{alertNotify.title}</div>
               <div className="text-xs font-black text-white mt-1">{alertNotify.message}</div>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* === FIRST TIME CONTROLS GUIDE DIALOG OVERLAY (처음 시작 조작 설명창) === */}
+      <AnimatePresence>
+        {showFirstLaunchGuide && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[999] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md select-none"
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 180 }}
+              className="bg-slate-900 border-2 border-slate-700/80 rounded-3xl p-6 shadow-[0_0_50px_rgba(34,211,238,0.25)] max-w-2xl w-full text-slate-200 font-sans"
+            >
+              {/* Header Title with animated stars / logo */}
+              <div className="text-center border-b border-slate-800 pb-4 mb-5">
+                <span className="text-[10px] font-black text-cyan-400 bg-cyan-400/10 px-3 py-1 rounded-full uppercase tracking-widest font-mono border border-cyan-400/25 animate-pulse">
+                  🏁 WELCOME TO THE ANIME KART RACING!
+                </span>
+                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-amber-300 to-pink-500 mt-2">
+                  초보 레이서 드라이빙 가이드
+                </h2>
+                <p className="text-xs text-slate-400 mt-1 font-mono">레이스 출발 전, 조작법을 숙지하여 서킷의 지배자가 되세요!</p>
+              </div>
+
+              {/* Grid content columns: Keyboards vs Mobile Touch */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-6">
+                
+                {/* Keyboard Controls card */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center space-x-1.5 border-b border-slate-900 pb-2 mb-3">
+                      <span className="text-sm">⌨️</span>
+                      <h3 className="text-xs font-black text-pink-400">PC 키보드 모드 조작</h3>
+                    </div>
+                    <div className="space-y-2.5 text-xs text-slate-300 font-mono">
+                      <div className="flex justify-between items-center bg-slate-900/55 p-1.5 px-2.5 rounded-xl">
+                        <span>전방 가속 / 후진</span>
+                        <span className="font-bold text-white text-[10px] bg-slate-800 px-1.5 py-0.5 rounded shadow">W / S</span>
+                      </div>
+                      <div className="flex justify-between items-center bg-slate-900/55 p-1.5 px-2.5 rounded-xl">
+                        <span>곡선 좌우 조향</span>
+                        <span className="font-bold text-white text-[10px] bg-slate-800 px-1.5 py-0.5 rounded shadow">A / D</span>
+                      </div>
+                      <div className="flex justify-between items-center bg-slate-900/55 p-1.5 px-2.5 rounded-xl">
+                        <span>익스트림 드리프트</span>
+                        <span className="font-bold text-white text-[10px] bg-slate-800 px-1.5 py-0.5 rounded shadow">Left Shift</span>
+                      </div>
+                      <div className="flex justify-between items-center bg-slate-900/55 p-1.5 px-2.5 rounded-xl">
+                        <span>질주 부스터 가속</span>
+                        <span className="font-bold text-white text-[9px] bg-slate-800 px-1.5 py-0.5 rounded shadow">Space / Ctrl</span>
+                      </div>
+                      <div className="flex justify-between items-center bg-slate-900/55 p-1.5 px-2.5 rounded-xl">
+                        <span>카메라 뷰 변경</span>
+                        <span className="font-bold text-white text-[10px] bg-slate-800 px-1.5 py-0.5 rounded shadow">V / C Key</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mobile / Touch Controls card */}
+                <div className="bg-slate-950 p-4 rounded-2xl border border-slate-850 flex flex-col justify-between">
+                  <div>
+                    <div className="flex items-center space-x-1.5 border-b border-slate-900 pb-2 mb-3">
+                      <span className="text-sm">📱</span>
+                      <h3 className="text-xs font-black text-cyan-400">모바일 터치 모드 조작</h3>
+                    </div>
+                    <div className="space-y-4 text-xs font-sans">
+                      <div className="bg-cyan-950/20 border border-cyan-500/20 p-2.5 rounded-xl text-[11px] leading-relaxed text-cyan-300">
+                        <span className="font-black text-cyan-400 block mb-1">🚀 가속 페달 자동 제어 (오토 런)</span>
+                        모바일에서는 엑셀 버튼을 일일이 누르지 않아도 **기본 기능인 항시 최고 속도로 자동 전진**합니다!
+                      </div>
+                      <div className="space-y-1.5 text-[10.5px] text-slate-400 pl-1">
+                        <div className="flex items-start space-x-1">
+                          <span className="text-cyan-400 mt-0.5">●</span>
+                          <span><b>좌측 조향 드래그 바:</b> 좌우로 밀어서 미세 조향</span>
+                        </div>
+                        <div className="flex items-start space-x-1">
+                          <span className="text-cyan-400 mt-0.5">●</span>
+                          <span><b>우측 [↩ DRIFT]:</b> 회전 구간에서 드리프트 트리거</span>
+                        </div>
+                        <div className="flex items-start space-x-1">
+                          <span className="text-cyan-400 mt-0.5">●</span>
+                          <span><b>우측 [⚡ BOOST]:</b> 순간 가속 질주 분사</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Tips section at the bottom */}
+              <div className="bg-slate-950/60 p-3 rounded-2xl border border-slate-850 text-center text-xs text-slate-350 leading-normal mb-6 flex flex-col justify-center items-center">
+                <span className="font-black text-amber-400 block text-[10px] uppercase font-mono tracking-wider mb-0.5">🌟 BEST PRO-RACER TIP</span>
+                코너 방향키를 드래그한 상태에서 오른쪽 [↩ DRIFT] 키를 터치 후 떼면, 하이퍼 드리프트 게이지가 순식간에 차오르며 질주용 파워 부스터를 획득할 수 있습니다!
+              </div>
+
+              {/* Close Button Action */}
+              <div className="flex justify-center">
+                <button
+                  onClick={() => {
+                    triggerAudioInit();
+                    try {
+                      localStorage.setItem('anime_has_seen_controls_v3', 'true');
+                    } catch (e) {}
+                    setShowFirstLaunchGuide(false);
+                    showHUDNotification('레이싱 준비 완료', '조작법 가이드가 저장되었습니다. 서킷을 재미있게 질주해보세요!');
+                  }}
+                  className="px-8 py-3.5 cursor-pointer rounded-2xl bg-gradient-to-r from-cyan-400 to-blue-600 hover:brightness-110 active:scale-95 text-white font-black text-sm shadow-[0_0_20px_rgba(6,182,212,0.4)] flex items-center space-x-2 transition-all duration-150"
+                >
+                  <Check size={16} className="text-white" />
+                  <span>그럼, 신나게 달려볼까요! (스타트)</span>
+                </button>
+              </div>
+
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>

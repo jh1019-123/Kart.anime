@@ -75,6 +75,51 @@ export const KARTS: KartInfo[] = [
       handling: 0.036
     },
     price: 450
+  },
+  {
+    id: 'crimson_vortex',
+    name: '티탄 레드 포스',
+    color: 0xd946ef, // Soft Fuchsia
+    flameColor: 0xef4444, // Red spark
+    description: '하이엔드 가챠 엔진. 실시간 고열 압축 배기 시스템을 통해 끊임없는 추진 서지 출력을 수배출합니다.',
+    rarity: 'Legendary',
+    stats: {
+      speed: 1.62,
+      accel: 0.034,
+      drift: 2.0,
+      handling: 0.040
+    },
+    price: 850
+  },
+  {
+    id: 'obsidian_shadow',
+    name: '다크 옵시디언 섀도우',
+    color: 0x1e293b, // Slate Slate
+    flameColor: 0xfacc15, // Golden glow
+    description: '심연급 고밀도 복합 외장을 두른 최첨단 기어. 극대형 토크 기어를 통해 고비율의 오버드라이브 속도를 유지합니다.',
+    rarity: 'Legendary',
+    stats: {
+      speed: 1.65,
+      accel: 0.035,
+      drift: 2.3,
+      handling: 0.041
+    },
+    price: 1250
+  },
+  {
+    id: 'emperor_absolute',
+    name: '디 아웃레이지 엠퍼러',
+    color: 0xeab308, // Golden yellow
+    flameColor: 0x06b6d4, // Cyan fire
+    description: '성계 패권 챔피언 기체. 고도화된 타키온 양자 가속 코어를 퓨징하여 모든 트랙 마티네를 비약적으로 단축합니다.',
+    rarity: 'Legendary',
+    stats: {
+      speed: 1.72,
+      accel: 0.040,
+      drift: 2.7,
+      handling: 0.046
+    },
+    price: 2200
   }
 ];
 

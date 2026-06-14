@@ -713,6 +713,7 @@ export class GameEngine {
   isSuperNitro = false;
   aiBoosterActive = false;
   aiBoosterTimer = 0;
+  playerAuraId = 'none';
 
   speed = 0;
   maxSpeed = 1.15;
@@ -745,8 +746,10 @@ export class GameEngine {
   aiAutoItemTimer = 400; // Fallback timer to auto-grant items to AI to keep the race extremely engaging
   onComicPopup?: (text: string, color: string) => void;
   onHUDNotification?: (title: string, body: string) => void;
+  onCoinCollected?: () => void;
 
   itemBoxes: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; active: boolean; respawnTimer: number }> = [];
+  coins: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; active: boolean; respawnTimer: number }> = [];
   obstacles: Array<{ mesh: THREE.Mesh; position: THREE.Vector3 }> = [];
   particleGroup: THREE.Mesh[] = [];
 
@@ -783,7 +786,8 @@ export class GameEngine {
     onAiCrashNotification: () => void,
     onPlayerCrashNotification: () => void,
     ghostConfig?: { isGhost: boolean; targetTimeMs: number; ghostColorHex: number },
-    gameModeParam?: string
+    gameModeParam?: string,
+    playerAuraIdParam?: string
   ) {
     this.container = container;
     this.gameMode = gameModeParam || 'speed';
@@ -792,6 +796,7 @@ export class GameEngine {
     // stats.drift affects gauge multiplier
     this.turnSpeed = stats.handling;
     this.ghostConfig = ghostConfig;
+    this.playerAuraId = playerAuraIdParam || 'none';
 
     this.onLapChange = onLapChange;
     this.onSpeedChange = onSpeedChange;
@@ -805,7 +810,7 @@ export class GameEngine {
     this.initTrack(mapInfo.points);
     this.init3D(mapInfo.skyColor);
     this.buildTrack();
-    this.playerKart = this.createKart(playerKartColor, playerFlameColor, true);
+    this.playerKart = this.createKart(playerKartColor, playerFlameColor, true, this.playerAuraId);
     this.aiKart = this.createKart(aiKartColor, 0xfacc15, false);
 
     // If ghost mode is active, make the AI kart translucent and colorized
@@ -971,7 +976,7 @@ export class GameEngine {
     this.scene.add(gateGroup);
   }
 
-  createKart(colorHex: number, nozzleColorHex: number, isPlayer: boolean = false) {
+  createKart(colorHex: number, nozzleColorHex: number, isPlayer: boolean = false, auraId?: string) {
     const kartGroup = new THREE.Group();
 
     // Chassis body
@@ -1040,6 +1045,94 @@ export class GameEngine {
     marker.name = "overhead_marker";
     kartGroup.add(marker);
 
+    // Create under-kart decorative aura mesh if player has it equipped
+    if (isPlayer && auraId && auraId !== 'none') {
+      const auraGroup = new THREE.Group();
+      auraGroup.name = "aura_group";
+      auraGroup.position.set(0, 0.22, 0); // Raised above track surface (to avoid road mesh clipping and guide line interference)
+
+      let primaryColor = 0x00ffff;
+      let secondaryColor = 0xff00ff;
+      let segments = 32;
+      let geomType = 4; // square by default
+
+      if (auraId === 'neon_cyan') {
+        primaryColor = 0x06b6d4;
+        secondaryColor = 0x22d3ee;
+        geomType = 6; // Hexagon
+      } else if (auraId === 'magma_ember') {
+        primaryColor = 0xef4444;
+        secondaryColor = 0xf97316;
+        geomType = 3; // Triangle
+      } else if (auraId === 'cosmic_nebula') {
+        primaryColor = 0xa855f7;
+        secondaryColor = 0xec4899;
+        geomType = 4; // Square
+      } else if (auraId === 'golden_champion') {
+        primaryColor = 0xeab308;
+        secondaryColor = 0xfef08a;
+        segments = 8; // Octagon
+        geomType = 3; // Triangle
+      }
+
+      // Outer Ring - Made significantly larger to extend far beyond the kart body (approx 3.6 - 3.9 units radius)
+      const ringGeo1 = new THREE.RingGeometry(3.6, 3.9, segments);
+      const ringMat1 = new THREE.MeshBasicMaterial({
+        color: primaryColor,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const ring1 = new THREE.Mesh(ringGeo1, ringMat1);
+      ring1.rotation.x = Math.PI / 2;
+      ring1.name = "ring1";
+      auraGroup.add(ring1);
+
+      // Inner Ring - Expanded for proportional balance (approx 2.5 - 2.8 units radius)
+      const ringGeo2 = new THREE.RingGeometry(2.5, 2.75, segments);
+      const ringMat2 = new THREE.MeshBasicMaterial({
+        color: secondaryColor,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const ring2 = new THREE.Mesh(ringGeo2, ringMat2);
+      ring2.rotation.x = Math.PI / 2;
+      ring2.name = "ring2";
+      auraGroup.add(ring2);
+
+      // Mystical Geometric Star/Rune Inner Polygon - Expanded (approx 2.85 - 3.55 units radius)
+      const starGeo = new THREE.RingGeometry(2.8, 3.5, geomType);
+      const starMat = new THREE.MeshBasicMaterial({
+        color: primaryColor,
+        transparent: true,
+        opacity: 0.5,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      const star = new THREE.Mesh(starGeo, starMat);
+      star.rotation.x = Math.PI / 2;
+      star.name = "star1";
+      auraGroup.add(star);
+
+      // If golden champion, add a second interlaced triangle to create a hexagram/shining star emblem
+      if (auraId === 'golden_champion') {
+        const star2 = new THREE.Mesh(starGeo, starMat);
+        star2.rotation.x = Math.PI / 2;
+        star2.rotation.z = Math.PI / 3; // Rotated offset
+        star2.name = "star2";
+        auraGroup.add(star2);
+      }
+
+      auraGroup.renderOrder = 5;
+      kartGroup.add(auraGroup);
+    }
+
     this.scene.add(kartGroup);
     return { mesh: kartGroup, wheels, nozzle };
   }
@@ -1079,6 +1172,47 @@ export class GameEngine {
         this.itemBoxes.push({
           mesh: boxMesh,
           basePos: boxMesh.position.clone(),
+          active: true,
+          respawnTimer: 0
+        });
+      });
+    }
+  }
+
+  spawnCoins() {
+    this.coins.forEach(coin => this.scene.remove(coin.mesh));
+    this.coins = [];
+
+    if (this.gameMode !== 'coin_rush') return;
+
+    const totalSectors = 18;
+    for (let i = 0; i < totalSectors; i++) {
+      const t = (i + 0.3) / totalSectors;
+      const point = this.trackSpline.getPointAt(t);
+      const tangent = this.trackSpline.getTangentAt(t).normalize();
+      const lateralDir = tangent.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+
+      const positions = [-3.0, 3.0];
+      positions.forEach(offset => {
+        const coinMat = new THREE.MeshStandardMaterial({
+          color: 0xffd700,
+          transparent: true,
+          opacity: 0.95,
+          metalness: 0.9,
+          roughness: 0.05,
+          emissive: 0xffa500,
+          emissiveIntensity: 0.55
+        });
+
+        const coinMesh = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.16, 8, 16), coinMat);
+        const spawnPos = point.clone().addScaledVector(lateralDir, offset);
+        coinMesh.position.copy(spawnPos);
+        coinMesh.position.y += 1.4;
+
+        this.scene.add(coinMesh);
+        this.coins.push({
+          mesh: coinMesh,
+          basePos: coinMesh.position.clone(),
           active: true,
           respawnTimer: 0
         });
@@ -1260,11 +1394,13 @@ export class GameEngine {
     this.aiKart.mesh.rotation.y = this.angle;
 
     this.spawnItemBoxes();
+    this.spawnCoins();
   }
 
   activateEngine() {
     this.active = true;
     this.spawnItemBoxes();
+    this.spawnCoins();
   }
 
   useBooster() {
@@ -1440,7 +1576,7 @@ export class GameEngine {
     });
   }
 
-  update(keys: Record<string, boolean>, driftStatsWeight = 1.8) {
+  update(keys: Record<string, any>, driftStatsWeight = 1.8) {
     if (!this.active) return;
 
     this.timer += 16.67;
@@ -1449,6 +1585,19 @@ export class GameEngine {
     if (this.playerKart && this.playerKart.mesh) {
       const pMarker = this.playerKart.mesh.getObjectByName("overhead_marker");
       if (pMarker) pMarker.rotation.y += 0.05;
+
+      // Rotate player's under-kart aura rings and mystical runes if present
+      const pAura = this.playerKart.mesh.getObjectByName("aura_group");
+      if (pAura) {
+        const r1 = pAura.getObjectByName("ring1");
+        const r2 = pAura.getObjectByName("ring2");
+        const s1 = pAura.getObjectByName("star1");
+        const s2 = pAura.getObjectByName("star2");
+        if (r1) r1.rotation.z += 0.012;
+        if (r2) r2.rotation.z -= 0.018;
+        if (s1) s1.rotation.z += 0.022;
+        if (s2) s2.rotation.z -= 0.028;
+      }
     }
     if (this.aiKart && this.aiKart.mesh) {
       const aMarker = this.aiKart.mesh.getObjectByName("overhead_marker");
@@ -1504,9 +1653,21 @@ export class GameEngine {
     let angleDiff = 0;
     if (Math.abs(this.speed) > 0.05) {
       const turnDirection = this.speed > 0 ? 1 : -1;
-      // Smoothened steering coefficient by 15% for much cleaner control per request
-      if (left) angleDiff = this.turnSpeed * turnDirection * 0.85;
-      if (right) angleDiff = -this.turnSpeed * turnDirection * 0.85;
+      if (keys.steerRatio !== undefined) {
+        const rawRatio = keys.steerRatio;
+        const absRatio = Math.abs(rawRatio);
+        if (absRatio > 0.04) {
+          // Curved mapping: gives precise gentle steering around the center and sharper steering on full pull.
+          const curvedRatio = Math.pow(absRatio, 1.4) * Math.sign(rawRatio);
+          angleDiff = -curvedRatio * this.turnSpeed * turnDirection * 0.85;
+        } else {
+          angleDiff = 0;
+        }
+      } else {
+        // Smoothened steering coefficient by 15% for much cleaner control per request
+        if (left) angleDiff = this.turnSpeed * turnDirection * 0.85;
+        if (right) angleDiff = -this.turnSpeed * turnDirection * 0.85;
+      }
     }
 
     // Drift Logic
@@ -1926,6 +2087,43 @@ export class GameEngine {
       }
     });
 
+    // Coin collisions inside Coin Rush mode
+    if (this.gameMode === 'coin_rush') {
+      this.coins.forEach(coin => {
+        if (coin.active && pPos.distanceTo(coin.mesh.position) < 3.2) {
+          coin.active = false;
+          coin.mesh.visible = false;
+          coin.respawnTimer = 220; // respawn in ~3.6s
+          
+          // emit spark fragments
+          for (let i = 0; i < 5; i++) {
+            const sparkleOffset = new THREE.Vector3(
+              (Math.random() - 0.5) * 1.5,
+              (Math.random() - 0.5) * 1.5,
+              (Math.random() - 0.5) * 1.5
+            );
+            this.createSmokeParticle(coin.mesh.position.clone().add(sparkleOffset), 0xffd700, 0.35);
+          }
+          
+          if (this.onCoinCollected) {
+            this.onCoinCollected();
+          }
+        }
+
+        if (coin.active) {
+          coin.mesh.rotation.y += 0.055;
+          coin.mesh.rotation.z += 0.015;
+          coin.mesh.position.y = coin.basePos.y + Math.sin(Date.now() * 0.005 + coin.basePos.x) * 0.25;
+        } else {
+          coin.respawnTimer--;
+          if (coin.respawnTimer <= 0) {
+            coin.active = true;
+            coin.mesh.visible = true;
+          }
+        }
+      });
+    }
+
     // Obstacles
     for (let i = this.obstacles.length - 1; i >= 0; i--) {
       const obs = this.obstacles[i];
@@ -2112,6 +2310,14 @@ export class GameEngine {
 
   cleanup() {
     AudioEngine.stopEngine();
+    if (this.coins) {
+      this.coins.forEach(coin => {
+        try {
+          this.scene.remove(coin.mesh);
+        } catch (e) {}
+      });
+      this.coins = [];
+    }
     if (this.multiplayerKarts) {
       this.multiplayerKarts.forEach(kart => {
         try {

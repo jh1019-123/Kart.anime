@@ -384,6 +384,31 @@ export const AudioEngine = {
     } catch (e) {}
   },
 
+  playCoin() {
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const freqs = [987.77, 1318.51];
+      freqs.forEach((freq, idx) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.08);
+
+        gain.gain.setValueAtTime(0, now + idx * 0.08);
+        gain.gain.linearRampToValueAtTime(0.04, now + idx * 0.08 + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.16);
+
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+
+        osc.start(now + idx * 0.08);
+        osc.stop(now + idx * 0.08 + 0.2);
+      });
+    } catch (e) {}
+  },
+
   playBGM(mapId: string = 'neon_sky_way') {
     if (!this.ctx) this.init();
     if (!this.ctx) return;
@@ -710,6 +735,8 @@ export class GameEngine {
   lap = 1;
   maxLaps = 3;
   lapCheckpoints = [false, false];
+  aiLap = 1;
+  aiLapCheckpoints = [false, false];
   isSuperNitro = false;
   aiBoosterActive = false;
   aiBoosterTimer = 0;
@@ -726,6 +753,7 @@ export class GameEngine {
   isDrifting = false;
   driftDirection = 0;
   driftAngle = 0;
+  lastDriftKey = false;
   boosterGauge = 0;
   boosterStock = 0;
   boosterActive = false;
@@ -738,6 +766,8 @@ export class GameEngine {
 
   // AI item management
   gameMode: string = 'speed';
+  mapInfo!: MapInfo;
+  aiPaintTarget: THREE.Vector3 | null = null;
   aiShieldActive = false;
   aiShieldTimer = 0;
   aiHasItem = false;
@@ -747,6 +777,16 @@ export class GameEngine {
   onComicPopup?: (text: string, color: string) => void;
   onHUDNotification?: (title: string, body: string) => void;
   onCoinCollected?: () => void;
+  onPaintTurfRatio?: (playerRatio: number) => void;
+  onFlagScoreChange?: (playerScore: number, aiScore: number) => void;
+
+  paints: Array<{ mesh: THREE.Mesh; owner: 'player' | 'ai' }> = [];
+  paintTimer = 0;
+
+  playerFlagScore = 0;
+  aiFlagScore = 0;
+  currentFlagPos: THREE.Vector3 | null = null;
+  flagMesh: THREE.Group | null = null;
 
   itemBoxes: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; active: boolean; respawnTimer: number }> = [];
   coins: Array<{ mesh: THREE.Mesh; basePos: THREE.Vector3; active: boolean; respawnTimer: number }> = [];
@@ -769,6 +809,8 @@ export class GameEngine {
   onGameFinished: (playerWon: boolean, finalTime: number) => void;
   onAiCrashNotification: () => void;
   onPlayerCrashNotification: () => void;
+  onShootMissile?: (targetPeerId: string) => void;
+  onDropBanana?: (pos: { x: number; y: number; z: number }) => void;
 
   constructor(
     container: HTMLDivElement,
@@ -791,12 +833,23 @@ export class GameEngine {
   ) {
     this.container = container;
     this.gameMode = gameModeParam || 'speed';
+    this.mapInfo = mapInfo;
     this.maxSpeed = stats.speed;
     this.accel = stats.accel;
     // stats.drift affects gauge multiplier
     this.turnSpeed = stats.handling;
     this.ghostConfig = ghostConfig;
     this.playerAuraId = playerAuraIdParam || 'none';
+
+    if (this.gameMode === 'time_attack') {
+      this.maxLaps = 1;
+    } else if (this.gameMode === 'ten_laps') {
+      this.maxLaps = 10;
+    } else if (this.gameMode === 'obstacle_dash') {
+      this.maxLaps = 1;
+    } else {
+      this.maxLaps = 3;
+    }
 
     this.onLapChange = onLapChange;
     this.onSpeedChange = onSpeedChange;
@@ -843,8 +896,37 @@ export class GameEngine {
   }
 
   initTrack(pointsArray: [number, number, number][]) {
-    const vectors = pointsArray.map(p => new THREE.Vector3(p[0], p[1], p[2]));
-    this.trackSpline = new THREE.CatmullRomCurve3(vectors, true);
+    const scaleFactor = 1.75;
+    const scaledPoints = pointsArray.map(p => new THREE.Vector3(p[0] * scaleFactor, p[1] * scaleFactor, p[2] * scaleFactor));
+
+    if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
+      // Keep it a closed circle
+      this.trackSpline = new THREE.CatmullRomCurve3(scaledPoints, true);
+    } else if (this.mapInfo && this.mapInfo.id === 'straight_dash') {
+      // Straight dash is open
+      this.trackSpline = new THREE.CatmullRomCurve3(scaledPoints, false);
+    } else {
+      // Milder rolling average filter to preserve sharp, thrilling high-speed curves
+      const smoothed: THREE.Vector3[] = [];
+      const len = scaledPoints.length;
+      for (let i = 0; i < len; i++) {
+        const prev = scaledPoints[(i - 1 + len) % len];
+        const curr = scaledPoints[i];
+        const next = scaledPoints[(i + 1) % len];
+        
+        if (i === 0 || i === len - 1) {
+          smoothed.push(curr.clone());
+        } else {
+          // Milder: 85% current point, 7.5% previous, 7.5% next
+          const avg = new THREE.Vector3()
+            .addScaledVector(curr, 0.85)
+            .addScaledVector(prev, 0.075)
+            .addScaledVector(next, 0.075);
+          smoothed.push(avg);
+        }
+      }
+      this.trackSpline = new THREE.CatmullRomCurve3(smoothed, true);
+    }
   }
 
   init3D(skyColor: number) {
@@ -886,7 +968,84 @@ export class GameEngine {
   }
 
   buildTrack() {
-    const trackGeometry = new THREE.TubeGeometry(this.trackSpline, 200, 14, 8, true);
+    if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
+      // Render completely flat solid circular arena platform
+      const radius = 150;
+      const arenaGeo = new THREE.CylinderGeometry(radius, radius, 0.4, 64);
+      const arenaMat = new THREE.MeshStandardMaterial({
+        color: 0x0f172a, // Deep slate blue black
+        roughness: 0.5,
+        metalness: 0.3
+      });
+      this.roadMesh = new THREE.Mesh(arenaGeo, arenaMat);
+      this.roadMesh.position.set(0, -0.2, 0);
+      this.scene.add(this.roadMesh);
+
+      // Glowing emerald outer boundary ring
+      const borderRingGeo = new THREE.RingGeometry(radius - 2.5, radius, 64);
+      const borderRingMat = new THREE.MeshBasicMaterial({
+        color: 0x10b981, // Emerald green
+        side: THREE.DoubleSide
+      });
+      const borderRing = new THREE.Mesh(borderRingGeo, borderRingMat);
+      borderRing.rotateX(-Math.PI / 2);
+      borderRing.position.y = 0.04;
+      this.scene.add(borderRing);
+
+      // Cyber grid patterns covering the entire arena ground
+      const grid = new THREE.GridHelper(radius * 2, 48, 0x10b981, 0x1e293b);
+      grid.position.y = 0.02;
+      this.scene.add(grid);
+
+      // Add 12 tall glowing futuristic colosseum columns around the perimeter
+      const columnHeight = 45;
+      const columnRadius = 2.4;
+      const columnCount = 12;
+      for (let i = 0; i < columnCount; i++) {
+        const theta = (i / columnCount) * Math.PI * 2;
+        const colX = Math.cos(theta) * (radius - 5.0);
+        const colZ = Math.sin(theta) * (radius - 5.0);
+
+        // Column Mesh
+        const colGeo = new THREE.CylinderGeometry(columnRadius, columnRadius, columnHeight, 12);
+        const colMat = new THREE.MeshStandardMaterial({
+          color: 0x1e293b,
+          roughness: 0.4,
+          metalness: 0.8
+        });
+        const column = new THREE.Mesh(colGeo, colMat);
+        column.position.set(colX, columnHeight / 2, colZ);
+        this.scene.add(column);
+
+        // Add 2 rings of neon lights around each column
+        for (let rIdx = 0; rIdx < 2; rIdx++) {
+          const neonRingGeo = new THREE.CylinderGeometry(columnRadius + 0.15, columnRadius + 0.15, 0.4, 12);
+          const neonColor = (i % 2 === 0) ? 0x10b981 : 0x22d3ee; // Alternate Emerald Green vs Cyan
+          const neonMat = new THREE.MeshBasicMaterial({
+            color: neonColor,
+            side: THREE.DoubleSide
+          });
+          const neonRing = new THREE.Mesh(neonRingGeo, neonMat);
+          neonRing.position.set(colX, (rIdx + 1) * 14.0, colZ);
+          this.scene.add(neonRing);
+        }
+      }
+
+      // Add a huge floating glowing neon ring in the sky as a major visual beacon
+      const centerRingGeo = new THREE.RingGeometry(35, 41, 64);
+      const centerRingMat = new THREE.MeshBasicMaterial({
+        color: 0x10b981,
+        side: THREE.DoubleSide
+      });
+      const centerRing = new THREE.Mesh(centerRingGeo, centerRingMat);
+      centerRing.rotateX(-Math.PI / 2);
+      centerRing.position.set(0, 32, 0);
+      this.scene.add(centerRing);
+
+      return;
+    }
+
+    const trackGeometry = new THREE.TubeGeometry(this.trackSpline, 200, 22, 8, this.mapInfo ? this.mapInfo.id !== 'straight_dash' : true);
     const trackMaterial = new THREE.MeshBasicMaterial({
       color: 0x27272a, // asphalt gray for superb contrast
       side: THREE.DoubleSide
@@ -896,7 +1055,7 @@ export class GameEngine {
     this.scene.add(this.roadMesh);
 
     // Bright glowing neon-cyan centerline for perfect course alignment and outstanding visibility
-    const guideGeometry = new THREE.TubeGeometry(this.trackSpline, 300, 0.65, 8, true);
+    const guideGeometry = new THREE.TubeGeometry(this.trackSpline, 300, 0.65, 8, this.mapInfo ? this.mapInfo.id !== 'straight_dash' : true);
     const guideMaterial = new THREE.MeshBasicMaterial({
       color: 0x22d3ee, // Glowing Neon Cyan
       side: THREE.DoubleSide
@@ -910,63 +1069,63 @@ export class GameEngine {
     const splinePoints = this.trackSpline.getSpacedPoints(pointsCount);
 
     for (let i = 0; i < pointsCount; i++) {
-      const pt = splinePoints[i];
-      const tangent = this.trackSpline.getTangentAt(i / pointsCount).normalize();
-      const normal = new THREE.Vector3(0, 1, 0);
-      const binormal = tangent.clone().cross(normal).normalize();
+       const pt = splinePoints[i];
+       const tangent = this.trackSpline.getTangentAt(i / pointsCount).normalize();
+       const normal = new THREE.Vector3(0, 1, 0);
+       const binormal = tangent.clone().cross(normal).normalize();
 
-      // Warning center dashes
-      if (i % 2 === 0) {
-        const centerDashGeo = new THREE.BoxGeometry(0.3, 0.05, 2.5);
-        const centerDashMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
-        const dash = new THREE.Mesh(centerDashGeo, centerDashMat);
-        dash.position.copy(pt).add(new THREE.Vector3(0, 0.05, 0));
-        dash.lookAt(pt.clone().add(tangent));
-        this.scene.add(dash);
-      }
+       // Warning center dashes
+       if (i % 2 === 0) {
+         const centerDashGeo = new THREE.BoxGeometry(0.3, 0.05, 2.5);
+         const centerDashMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+         const dash = new THREE.Mesh(centerDashGeo, centerDashMat);
+         dash.position.copy(pt).add(new THREE.Vector3(0, 0.05, 0));
+         dash.lookAt(pt.clone().add(tangent));
+         this.scene.add(dash);
+       }
 
-      // Border dots
-      const leftPos = pt.clone().add(binormal.clone().multiplyScalar(-13.8));
-      const leftRing = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
-      leftRing.position.copy(leftPos).add(new THREE.Vector3(0, 0.1, 0));
-      this.scene.add(leftRing);
+       // Border dots placed exactly near the 21.8 units edge (slightly inside the 22.0 wide tube)
+       const leftPos = pt.clone().add(binormal.clone().multiplyScalar(-21.6));
+       const leftRing = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+       leftRing.position.copy(leftPos).add(new THREE.Vector3(0, 0.1, 0));
+       this.scene.add(leftRing);
 
-      const rightPos = pt.clone().add(binormal.clone().multiplyScalar(13.8));
-      const rightRing = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), new THREE.MeshBasicMaterial({ color: 0xf43f5e }));
-      rightRing.position.copy(rightPos).add(new THREE.Vector3(0, 0.1, 0));
-      this.scene.add(rightRing);
+       const rightPos = pt.clone().add(binormal.clone().multiplyScalar(21.6));
+       const rightRing = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), new THREE.MeshBasicMaterial({ color: 0xf43f5e }));
+       rightRing.position.copy(rightPos).add(new THREE.Vector3(0, 0.1, 0));
+       this.scene.add(rightRing);
 
-      // Trees
-      if (i % 6 === 0) {
-        const treePos = pt.clone().add(binormal.clone().multiplyScalar(21));
-        const h = 7 + Math.random() * 8;
-        const tree = new THREE.Mesh(
-          new THREE.ConeGeometry(3.5, h, 4),
-          new THREE.MeshStandardMaterial({
-            color: Math.random() > 0.5 ? 0x22d3ee : 0xec4899,
-            roughness: 0.1,
-            metalness: 0.5,
-            emissive: Math.random() > 0.5 ? 0x06b6d4 : 0xdb2777,
-            emissiveIntensity: 0.45
-          })
-        );
-        tree.position.copy(treePos);
-        tree.position.y += h / 2;
-        this.decorativeGroup.add(tree);
-      }
+       // Trees shifted further outward to 30.0 units offset
+       if (i % 6 === 0) {
+         const treePos = pt.clone().add(binormal.clone().multiplyScalar(30));
+         const h = 7 + Math.random() * 8;
+         const tree = new THREE.Mesh(
+           new THREE.ConeGeometry(3.5, h, 4),
+           new THREE.MeshStandardMaterial({
+             color: Math.random() > 0.5 ? 0x22d3ee : 0xec4899,
+             roughness: 0.1,
+             metalness: 0.5,
+             emissive: Math.random() > 0.5 ? 0x06b6d4 : 0xdb2777,
+             emissiveIntensity: 0.45
+           })
+         );
+         tree.position.copy(treePos);
+         tree.position.y += h / 2;
+         this.decorativeGroup.add(tree);
+       }
     }
 
-    // Finish Gate
+    // Finish Gate scaled to match 22 units lane radius
     const gateGroup = new THREE.Group();
     const p1 = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 16, 6), new THREE.MeshBasicMaterial({ color: 0x334155 }));
-    p1.position.set(-15, 8, 0);
+    p1.position.set(-23, 8, 0);
     const p2 = p1.clone();
-    p2.position.set(15, 8, 0);
+    p2.position.set(23, 8, 0);
 
-    const cross = new THREE.Mesh(new THREE.BoxGeometry(32, 2, 3), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
+    const cross = new THREE.Mesh(new THREE.BoxGeometry(48, 2, 3), new THREE.MeshBasicMaterial({ color: 0x0f172a }));
     cross.position.set(0, 16, 0);
 
-    const banner = new THREE.Mesh(new THREE.BoxGeometry(14, 2.0, 3.2), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(20, 2.0, 3.2), new THREE.MeshBasicMaterial({ color: 0xfacc15 }));
     banner.position.set(0, 16, 0);
 
     gateGroup.add(p1, p2, cross, banner);
@@ -1150,8 +1309,8 @@ export class GameEngine {
       const tangent = this.trackSpline.getTangentAt(t).normalize();
       const lateralDir = tangent.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
 
-      // Spawn two boxes side-by-side at each milestone
-      const divisions = [-2.8, 2.8];
+      // Spawn two boxes side-by-side at each milestone, spaced wider for 22 units track
+      const divisions = [-6.5, 6.5];
       divisions.forEach(offset => {
         const boxMat = new THREE.MeshStandardMaterial({
           color: 0xfacc15,
@@ -1192,7 +1351,7 @@ export class GameEngine {
       const tangent = this.trackSpline.getTangentAt(t).normalize();
       const lateralDir = tangent.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
 
-      const positions = [-3.0, 3.0];
+      const positions = [-7.0, 7.0];
       positions.forEach(offset => {
         const coinMat = new THREE.MeshStandardMaterial({
           color: 0xffd700,
@@ -1373,10 +1532,40 @@ export class GameEngine {
     this.boosterStock = 0;
     this.boosterActive = false;
     this.lapCheckpoints = [false, false];
+    this.aiLap = 1;
+    this.aiLapCheckpoints = [false, false];
     this.aiProgress = 0;
+
+    // Clear Splatoon paints
+    this.paints.forEach(paint => {
+      try {
+        this.scene.remove(paint.mesh);
+        paint.mesh.geometry.dispose();
+        if (Array.isArray(paint.mesh.material)) paint.mesh.material.forEach(m => m.dispose());
+        else paint.mesh.material.dispose();
+      } catch (e) {}
+    });
+    this.paints = [];
+    this.paintTimer = 0;
+
+    // Clear and reset Flag Hunt
+    this.playerFlagScore = 0;
+    this.aiFlagScore = 0;
+    if (this.flagMesh) {
+      try { this.scene.remove(this.flagMesh); } catch (e) {}
+      this.flagMesh = null;
+    }
+    this.currentFlagPos = null;
 
     this.obstacles.forEach(obs => this.scene.remove(obs.mesh));
     this.obstacles = [];
+
+    if (this.gameMode === 'flag_hunt') {
+      this.spawnFlagRandomly();
+    }
+    if (this.gameMode === 'obstacle_dash') {
+      this.spawnStraightLineObstacles();
+    }
 
     const startPoint = this.trackSpline.getPointAt(0);
     const startDir = this.trackSpline.getTangentAt(0).normalize();
@@ -1401,6 +1590,9 @@ export class GameEngine {
     this.active = true;
     this.spawnItemBoxes();
     this.spawnCoins();
+    if (this.gameMode === 'obstacle_dash') {
+      this.spawnStraightLineObstacles();
+    }
   }
 
   useBooster() {
@@ -1414,6 +1606,40 @@ export class GameEngine {
   }
 
   shootMissile() {
+    let targetMesh: THREE.Object3D | null = null;
+    let targetPeerId: string | null = null;
+    let minDist = Infinity;
+    const playerPos = this.playerKart.mesh.position;
+
+    // 1. Check AI kart
+    if (this.aiKart && this.aiKart.mesh) {
+      const dist = playerPos.distanceTo(this.aiKart.mesh.position);
+      if (dist < minDist) {
+        minDist = dist;
+        targetMesh = this.aiKart.mesh;
+      }
+    }
+
+    // 2. Check multiplayer opponent karts
+    if (this.multiplayerKarts && this.multiplayerKarts.size > 0) {
+      this.multiplayerKarts.forEach((otherKart, peerId) => {
+        if (otherKart.mesh) {
+          const dist = playerPos.distanceTo(otherKart.mesh.position);
+          if (dist < minDist) {
+            minDist = dist;
+            targetMesh = otherKart.mesh;
+            targetPeerId = peerId;
+          }
+        }
+      });
+    }
+
+    if (!targetMesh && this.aiKart && this.aiKart.mesh) {
+      targetMesh = this.aiKart.mesh;
+    }
+
+    if (!targetMesh) return;
+
     const missile = new THREE.Mesh(
       new THREE.ConeGeometry(0.5, 1.8, 8),
       new THREE.MeshBasicMaterial({ color: 0xf43f5e })
@@ -1424,14 +1650,26 @@ export class GameEngine {
 
     let progress = 0;
     const launchInterval = setInterval(() => {
+      if (!this.active || !this.playerKart || !this.playerKart.mesh || !targetMesh) {
+        clearInterval(launchInterval);
+        try { this.scene.remove(missile); } catch (e) {}
+        return;
+      }
+
       progress += 0.06;
-      missile.position.lerp(this.aiKart.mesh.position, progress);
+      missile.position.lerp(targetMesh.position, progress);
       this.createSmokeParticle(missile.position, 0xf43f5e, 0.4);
 
       if (progress >= 1.0) {
         clearInterval(launchInterval);
         this.scene.remove(missile);
-        this.triggerAICrash();
+
+        if (targetMesh === this.aiKart?.mesh) {
+          this.triggerAICrash();
+        } else if (targetPeerId) {
+          this.onShootMissile?.(targetPeerId);
+          this.onComicPopup?.('HIT SENT!', '#ec4899');
+        }
       }
     }, 50);
   }
@@ -1574,6 +1812,241 @@ export class GameEngine {
       mesh: banana,
       position: banana.position.clone()
     });
+
+    // Invoke callback to sync banana coordinate across peers
+    this.onDropBanana?.({ x: dropPos.x, y: banana.position.y, z: dropPos.z });
+  }
+
+  remoteDropBanana(x: number, y: number, z: number) {
+    const banGeo = new THREE.CylinderGeometry(1.2, 1.2, 0.3, 8);
+    const banMat = new THREE.MeshStandardMaterial({
+      color: 0xfacc15,
+      emissive: 0xfacc15,
+      emissiveIntensity: 0.6
+    });
+    const banana = new THREE.Mesh(banGeo, banMat);
+    banana.position.set(x, y, z);
+
+    this.scene.add(banana);
+    this.obstacles.push({
+      mesh: banana,
+      position: banana.position.clone()
+    });
+  }
+
+  spawnPaintSpot(pos: THREE.Vector3, owner: 'player' | 'ai') {
+    const color = owner === 'player' ? 0x22d3ee : 0xec4899; // Cyan vs Neon Rose
+    const geo = new THREE.CylinderGeometry(4.2, 4.2, 0.05, 10);
+    const mat = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.75
+    });
+    const spot = new THREE.Mesh(geo, mat);
+    spot.position.copy(pos);
+    spot.position.y = 0.05 + Math.random() * 0.04;
+    
+    this.scene.add(spot);
+    this.paints.push({ mesh: spot, owner });
+
+    if (this.paints.length > 180) {
+      const oldest = this.paints.shift();
+      if (oldest) {
+        this.scene.remove(oldest.mesh);
+        oldest.mesh.geometry.dispose();
+        if (Array.isArray(oldest.mesh.material)) oldest.mesh.material.forEach(m => m.dispose());
+        else oldest.mesh.material.dispose();
+      }
+    }
+
+    const pCount = this.paints.filter(p => p.owner === 'player').length;
+    const aCount = this.paints.filter(p => p.owner === 'ai').length;
+    const total = pCount + aCount;
+    if (total > 0) {
+      this.onPaintTurfRatio?.(pCount / total);
+    }
+  }
+
+  spawnFlagRandomly() {
+    if (this.flagMesh) {
+      this.scene.remove(this.flagMesh);
+      this.flagMesh = null;
+    }
+
+    const angle = Math.random() * Math.PI * 2;
+    // arena is bounded normally; let's place within radius 55
+    const r = 15 + Math.random() * 50;
+    this.currentFlagPos = new THREE.Vector3(Math.cos(angle) * r, 0.4, Math.sin(angle) * r);
+
+    const flagGroup = new THREE.Group();
+    
+    // Pole
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 });
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 7, 8), poleMat);
+    pole.position.y = 3.5;
+    flagGroup.add(pole);
+
+    // Banner
+    const bannerMat = new THREE.MeshBasicMaterial({ color: 0xeab308, side: THREE.DoubleSide });
+    const banner = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.5, 0.1), bannerMat);
+    banner.position.set(1.4, 6.0, 0);
+    flagGroup.add(banner);
+
+    // Ring glow
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xeab308, transparent: true, opacity: 0.35 });
+    const ring = new THREE.Mesh(new THREE.RingGeometry(0.1, 5.0, 32), ringMat);
+    ring.rotateX(-Math.PI / 2);
+    ring.position.y = 0.1;
+    flagGroup.add(ring);
+
+    // Point Light
+    const flagLight = new THREE.PointLight(0xeab308, 3.5, 35);
+    flagLight.position.set(0, 5, 0);
+    flagGroup.add(flagLight);
+
+    flagGroup.position.copy(this.currentFlagPos);
+    this.scene.add(flagGroup);
+    this.flagMesh = flagGroup;
+  }
+
+  collectFlag(winner: 'player' | 'ai') {
+    AudioEngine.playCoin();
+    if (winner === 'player') {
+      this.playerFlagScore += 1;
+      this.onComicPopup?.('+1 SCORE!', '#facc15');
+      this.onHUDNotification?.('깃발 획득!', '콜로세움 광장에 출현한 플래그를 선점하여 1득점 했습니다!');
+    } else {
+      this.aiFlagScore += 1;
+      this.onComicPopup?.('AI POINT!', '#ec4899');
+      this.onHUDNotification?.('깃발 피탈!', 'AI 라이벌 기체가 깃발을 선점해 득점했습니다!');
+    }
+
+    this.onFlagScoreChange?.(this.playerFlagScore, this.aiFlagScore);
+
+    if (this.playerFlagScore >= 5) {
+      this.onGameFinished(true, this.timer);
+    } else if (this.aiFlagScore >= 5) {
+      this.onGameFinished(false, this.timer);
+    } else {
+      this.spawnFlagRandomly();
+    }
+  }
+
+  spawnStraightLineObstacles() {
+    this.obstacles.forEach(obs => this.scene.remove(obs.mesh));
+    this.obstacles = [];
+
+    const totalSectors = 64;
+    for (let i = 1; i < totalSectors - 1; i++) {
+      const t = i / totalSectors;
+      const point = this.trackSpline.getPointAt(t);
+      const tangent = this.trackSpline.getTangentAt(t).normalize();
+      const lateralDir = tangent.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+
+      const pattern = i % 3;
+      let offsets: number[] = [];
+      let meshType: 'cone' | 'block' | 'box' = 'cone';
+      
+      if (pattern === 0) {
+        offsets = [-12.0, -3.0];
+        meshType = 'cone';
+      } else if (pattern === 1) {
+        offsets = [3.0, 12.0];
+        meshType = 'cone';
+      } else {
+        offsets = [-6.0, 6.0];
+        meshType = 'box';
+      }
+
+      offsets.forEach(offset => {
+        let obstacleMesh: THREE.Mesh;
+        if (meshType === 'cone') {
+          const geo = new THREE.ConeGeometry(1.2, 2.5, 6);
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xef4444, // neon orange-red
+            roughness: 0.2,
+            metalness: 0.8,
+            emissive: 0x991b1b,
+            emissiveIntensity: 0.4
+          });
+          obstacleMesh = new THREE.Mesh(geo, mat);
+          obstacleMesh.position.copy(point).addScaledVector(lateralDir, offset);
+          obstacleMesh.position.y += 1.25;
+        } else {
+          const geo = new THREE.BoxGeometry(2.2, 2.2, 2.2);
+          const mat = new THREE.MeshStandardMaterial({
+            color: 0xfacc15, // hazard golden
+            roughness: 0.3,
+            metalness: 0.7,
+            emissive: 0x854d0e,
+            emissiveIntensity: 0.45
+          });
+          obstacleMesh = new THREE.Mesh(geo, mat);
+          obstacleMesh.position.copy(point).addScaledVector(lateralDir, offset);
+          obstacleMesh.position.y += 1.1;
+        }
+
+        this.scene.add(obstacleMesh);
+        this.obstacles.push({
+          mesh: obstacleMesh,
+          position: obstacleMesh.position.clone()
+        });
+      });
+    }
+  }
+
+  swapRelayKart() {
+    const colors = [0xff007f, 0x06b6d4, 0xeab308, 0x475569, 0xa855f7, 0xd946ef, 0x1e293b];
+    const flames = [0x22d3ee, 0xec4899, 0xf97316, 0x8b5cf6, 0x22c55e, 0xef4444, 0xfacc15];
+    const names = ['커먼핑크 코어', '블루볼트 하이브리드', '골든마스터 프라임', '티탄 하드크롤러', '스플래시 드래곤', '진홍의 볼텍스 윙', '옵시디언 쉐도우 S'];
+    
+    const idx = Math.floor(Math.random() * colors.length);
+    const nextColor = colors[idx];
+    const nextFlameColor = flames[idx];
+    const nextName = names[idx];
+
+    if (this.playerKart && this.playerKart.mesh) {
+      this.playerKart.mesh.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          if (child.material && 'color' in child.material) {
+            if (child.material.color.getHex() !== 0x090d16 && child.material.color.getHex() !== 0x0f172a && child.material.color.getHex() !== 0x1e293b && child.name !== 'overhead_marker') {
+              child.material = new THREE.MeshStandardMaterial({
+                color: nextColor,
+                metalness: 0.9,
+                roughness: 0.15
+              });
+            }
+          }
+        }
+      });
+      
+      this.boosterActive = true;
+      this.boosterTimer = 160;
+      
+      this.maxSpeed = 1.6 + Math.random() * 0.4;
+      this.accel = 0.03 + Math.random() * 0.01;
+      
+      this.onComicPopup?.('RELAY SWAP!', '#a855f7');
+      this.onHUDNotification?.('바통 터치!', `후속 기체 [${nextName}] 주자로 체인지되면서 하이퍼 부스트가 발동했습니다!`);
+    }
+  }
+
+  remoteHitPlayer(itemType: string) {
+    if (!this.active) return;
+
+    if (itemType === 'missile') {
+      if (this.shieldActive) {
+        this.shieldActive = false;
+        this.onComicPopup?.('BLOCK!', '#3b82f6');
+        this.onHUDNotification?.('방어 성공!', '일렉트로 실드로 상대방의 유도 미사일을 요격했습니다!');
+      } else {
+        this.playerKart.mesh.userData.spinTimer = 50;
+        AudioEngine.playCrash();
+        this.onPlayerCrashNotification();
+        this.onComicPopup?.('CRASH!', '#ef4444');
+        this.onHUDNotification?.('미사일 피격!', '상대 플레이어의 유도 미사일 공격에 정통으로 맞아 스핀했습니다!');
+      }
+    }
   }
 
   update(keys: Record<string, any>, driftStatsWeight = 1.8) {
@@ -1634,11 +2107,15 @@ export class GameEngine {
     }
 
     // B. Drive Inputs
-    const forward = keys.ArrowUp || keys.w;
-    const backward = keys.ArrowDown || keys.s;
-    const left = keys.ArrowLeft || keys.a;
-    const right = keys.ArrowRight || keys.d;
+    const forward = keys.ArrowUp || keys.w || keys.W;
+    const backward = keys.ArrowDown || keys.s || keys.S;
+    const left = keys.ArrowLeft || keys.a || keys.A;
+    const right = keys.ArrowRight || keys.d || keys.D;
     const driftKey = keys.Shift;
+
+    // Track shift tap state for snappy chain transitions
+    const driftKeyJustPressed = driftKey && !this.lastDriftKey;
+    this.lastDriftKey = !!driftKey;
 
     if (forward) {
       this.speed += this.accel;
@@ -1670,8 +2147,24 @@ export class GameEngine {
       }
     }
 
+    // Break or switch current drift for consecutive opposite/S-drift seamlessly
+    if (this.isDrifting && driftKey) {
+      const isSteeringLeft = left || (keys.steerRatio !== undefined && keys.steerRatio < -0.05);
+      const isSteeringRight = right || (keys.steerRatio !== undefined && keys.steerRatio > 0.05);
+      const isSteeringOpposite = (this.driftDirection === 1 && isSteeringRight) || (this.driftDirection === -1 && isSteeringLeft);
+      if (isSteeringOpposite) {
+        this.driftDirection = -this.driftDirection;
+        this.driftAngle = -this.driftAngle * 0.4; // Reverse angle with slight snap reduction for weight transfer
+        AudioEngine.playDrift();
+        this.onComicPopup?.('S-DRIFT!', '#fc1da7');
+      }
+    }
+
     // Drift Logic
-    if (driftKey && Math.abs(angleDiff) > 0 && this.speed > 0.3) {
+    const canStartDrift = driftKey && Math.abs(angleDiff) > 0 && this.speed > 0.3;
+    const canSustainDrift = this.isDrifting && driftKey && this.speed > 0.3;
+
+    if (canStartDrift || canSustainDrift) {
       if (!this.isDrifting) {
         this.isDrifting = true;
         this.driftDirection = angleDiff > 0 ? 1 : -1;
@@ -1679,9 +2172,43 @@ export class GameEngine {
       }
       AudioEngine.setDriftActive(true);
 
-      // Boost drifting carve efficiency with a sharper 1.75x steering rate for intense cornering feel
-      angleDiff *= 1.75;
-      this.driftAngle = -this.driftDirection * 0.58;
+      let steerInput = 0;
+      if (left) steerInput = 1;
+      if (right) steerInput = -1;
+      if (keys.steerRatio !== undefined) {
+        steerInput = -keys.steerRatio;
+      }
+
+      const targetDriftAngle = -this.driftDirection * 0.42;
+      this.driftAngle = THREE.MathUtils.lerp(this.driftAngle, targetDriftAngle, 0.15);
+
+      // Automated drift physics slip vector:
+      if (steerInput !== 0) {
+        const steeringWithDrift = (Math.sign(steerInput) === this.driftDirection);
+        if (steeringWithDrift) {
+          // Steering into the drift: turn sharper but highly controlled, scaled by steering magnitude
+          const magnitude = Math.abs(steerInput);
+          angleDiff = this.driftDirection * this.turnSpeed * (1.0 + 0.5 * magnitude);
+        } else {
+          // Counter-steering: turns wide (reduces cornering sharpness but aligns the car, making it easy to recover)
+          const magnitude = Math.abs(steerInput);
+          angleDiff = -this.driftDirection * this.turnSpeed * 0.32 * magnitude;
+        }
+      } else {
+        // No input: automatic gentle slide along the curvature
+        angleDiff = this.driftDirection * this.turnSpeed * 0.65;
+      }
+
+      // Charge Gauge (boost active multiplier) - doubled for high reward and ease
+      const chargeRate = (this.isSuperNitro ? 8.0 : 2.85) * driftStatsWeight;
+      this.boosterGauge += chargeRate;
+      if (this.boosterGauge >= 100) {
+        this.boosterGauge = 0;
+        this.boosterStock++;
+        this.onBoosterCountChange(this.boosterStock);
+        this.onComicPopup?.('MINI TURBO!', '#22d3ee');
+      }
+      this.onBoosterGaugeChange(this.boosterGauge);
 
       const leftTyreOffset = new THREE.Vector3(-1.3, 0.1, -1.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
       const rightTyreOffset = new THREE.Vector3(1.3, 0.1, -1.4).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
@@ -1689,11 +2216,9 @@ export class GameEngine {
       const leftTirePos = this.playerKart.mesh.position.clone().add(leftTyreOffset);
       const rightTirePos = this.playerKart.mesh.position.clone().add(rightTyreOffset);
       
-      // Dual wheel drift smoke: hot pink on the left, glowing cyan on the right
       this.createSmokeParticle(leftTirePos, 0xff007f, 0.48);
       this.createSmokeParticle(rightTirePos, 0x06b6d4, 0.48);
 
-      // Wind speed line particles for premium drift feel
       if (Math.random() < 0.35) {
         const offset = new THREE.Vector3(
           (Math.random() - 0.5) * 6,
@@ -1704,21 +2229,12 @@ export class GameEngine {
         const backVec = new THREE.Vector3(-Math.sin(this.angle), 0, -Math.cos(this.angle));
         this.createSpeedLineParticle(spawnPos, backVec, Math.random() > 0.5 ? 0xff007f : 0x06b6d4);
       }
-
-      // Charge Gauge (boost active multiplier)
-      this.boosterGauge += ((this.isSuperNitro ? 6.5 : 1.25) * driftStatsWeight); // enhanced gauge charge rate for epic carves
-      if (this.boosterGauge >= 100) {
-        this.boosterGauge = 0;
-        this.boosterStock++;
-        this.onBoosterCountChange(this.boosterStock);
-      }
-      this.onBoosterGaugeChange(this.boosterGauge);
     } else {
       if (this.isDrifting) {
         this.isDrifting = false;
         AudioEngine.setDriftActive(false);
       }
-      this.driftAngle *= 0.78; // Snappier recovery out of drift
+      this.driftAngle = THREE.MathUtils.lerp(this.driftAngle, 0, 0.22);
     }
 
     this.angle += angleDiff;
@@ -1753,34 +2269,58 @@ export class GameEngine {
 
     // Outer wall check
     const nearestT = this.getNearestTrackSplinePoint(this.playerKart.mesh.position);
-    const centerPt = this.trackSpline.getPointAt(nearestT);
     this.playerKart.mesh.position.y = 0;
 
-    const dist = this.playerKart.mesh.position.distanceTo(centerPt);
-    const maxRoadRadius = 13.5;
-
-    if (dist > maxRoadRadius) {
-      const pushDir = new THREE.Vector3().subVectors(this.playerKart.mesh.position, centerPt);
-      pushDir.y = 0;
-      pushDir.normalize();
-
-      this.playerKart.mesh.position.copy(centerPt).add(pushDir.multiplyScalar(maxRoadRadius));
-
-      if (this.speed > 0.15) {
-        // Wall scrap slide physics with gradual velocity decay as requested instead of abrupt backward bounce
-        this.speed *= 0.92;
+    if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
+      const distFromCenter = this.playerKart.mesh.position.length();
+      const maxArenaRadius = 144.5;
+      if (distFromCenter > maxArenaRadius) {
+        const pushDir = this.playerKart.mesh.position.clone().normalize();
+        pushDir.y = 0;
         
-        // Throttled notification and audio play to prevent UI stutter logs
-        if (!this.lastCrashTime || Date.now() - this.lastCrashTime > 1200) {
-          AudioEngine.playCrash();
-          this.onPlayerCrashNotification();
-          this.lastCrashTime = Date.now();
-          for (let i = 0; i < 4; i++) {
-            this.createSmokeParticle(this.playerKart.mesh.position, 0xfacc15, 0.5);
+        // Push slightly inside to prevent sticking
+        this.playerKart.mesh.position.copy(pushDir).multiplyScalar(maxArenaRadius - 0.6);
+
+        if (Math.abs(this.speed) > 0.15) {
+          this.speed *= 0.88; // Custom slide friction instead of abrupt rotating
+          if (!this.lastCrashTime || Date.now() - this.lastCrashTime > 1000) {
+            AudioEngine.playCrash();
+            this.onPlayerCrashNotification();
+            this.lastCrashTime = Date.now();
+            for (let i = 0; i < 4; i++) {
+              this.createSmokeParticle(this.playerKart.mesh.position, 0x10b981, 0.5);
+            }
           }
+        } else {
+          this.speed *= 0.95;
         }
-      } else {
-        this.speed *= 0.95;
+      }
+    } else {
+      const centerPt = this.trackSpline.getPointAt(nearestT);
+      const dist = this.playerKart.mesh.position.distanceTo(centerPt);
+      const maxRoadRadius = 21.5;
+
+      if (dist > maxRoadRadius) {
+        const pushDir = new THREE.Vector3().subVectors(this.playerKart.mesh.position, centerPt);
+        pushDir.y = 0;
+        pushDir.normalize();
+
+        // Push slightly inside the road boundary to prevent sticking
+        this.playerKart.mesh.position.copy(centerPt).add(pushDir.multiplyScalar(maxRoadRadius - 0.6));
+
+        if (Math.abs(this.speed) > 0.15) {
+          this.speed *= 0.88; // Custom slide friction instead of abrupt rotating
+          if (!this.lastCrashTime || Date.now() - this.lastCrashTime > 1000) {
+            AudioEngine.playCrash();
+            this.onPlayerCrashNotification();
+            this.lastCrashTime = Date.now();
+            for (let i = 0; i < 4; i++) {
+              this.createSmokeParticle(this.playerKart.mesh.position, 0xfacc15, 0.5);
+            }
+          }
+        } else {
+          this.speed *= 0.95;
+        }
       }
     }
 
@@ -1789,6 +2329,31 @@ export class GameEngine {
 
     this.updateAIRacer();
     this.checkCollisions();
+
+    // Splatoon Paint Turf Mode Trail Spawns
+    if (this.gameMode === 'paint_turf' && this.active) {
+      this.paintTimer++;
+      if (this.paintTimer % 6 === 0) {
+        this.spawnPaintSpot(this.playerKart.mesh.position, 'player');
+        if (this.aiKart && this.aiKart.mesh) {
+          this.spawnPaintSpot(this.aiKart.mesh.position, 'ai');
+        }
+      }
+    }
+
+    // Flag Hunt Mode Flag Collection Checking
+    if (this.gameMode === 'flag_hunt' && this.currentFlagPos) {
+      const pDist = this.playerKart.mesh.position.distanceTo(this.currentFlagPos);
+      if (pDist < 6.5) {
+        this.collectFlag('player');
+      } else if (this.aiKart && this.aiKart.mesh) {
+        const aiDist = this.aiKart.mesh.position.distanceTo(this.currentFlagPos);
+        if (aiDist < 6.5) {
+          this.collectFlag('ai');
+        }
+      }
+    }
+
     this.checkLapMilestones(nearestT);
 
     if (this.shieldActive) {
@@ -1954,10 +2519,36 @@ export class GameEngine {
 
     // Update progress along track spline
     this.aiProgress += baseSpeed;
-    if (this.aiProgress > 1.0) this.aiProgress -= 1.0;
+    if (this.gameMode === 'obstacle_dash') {
+      if (this.aiProgress > 0.982) {
+        this.aiProgress = 0.982;
+        if (this.active) {
+          // AI crossed the finish line first
+          this.onGameFinished(false, this.timer);
+        }
+      }
+    } else {
+      if (this.aiProgress > 1.0) this.aiProgress -= 1.0;
+    }
 
     const currentPos = this.aiKart.mesh.position.clone();
-    const targetPos = this.trackSpline.getPointAt(this.aiProgress);
+    let targetPos = this.trackSpline.getPointAt(this.aiProgress);
+
+    if (this.gameMode === 'flag_hunt' && this.currentFlagPos) {
+      const dir = this.currentFlagPos.clone().sub(aiPos).normalize();
+      const stepDist = baseSpeed * 900;
+      targetPos = aiPos.clone().add(dir.multiplyScalar(stepDist));
+    } else if (this.gameMode === 'paint_turf') {
+      // AI paints by wandering around the circular arena!
+      if (!this.aiPaintTarget || aiPos.distanceTo(this.aiPaintTarget) < 14.0) {
+        const theta = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 130; // Stay within radius of 130
+        this.aiPaintTarget = new THREE.Vector3(Math.cos(theta) * radius, 0, Math.sin(theta) * radius);
+      }
+      const dir = this.aiPaintTarget.clone().sub(aiPos).normalize();
+      const stepDist = baseSpeed * 1050;
+      targetPos = aiPos.clone().add(dir.multiplyScalar(stepDist));
+    }
 
     // Smoothly interpolate positions
     this.aiKart.mesh.position.lerp(targetPos, 0.22);
@@ -2153,6 +2744,39 @@ export class GameEngine {
   }
 
   checkLapMilestones(nearestT: number) {
+    if (this.gameMode === 'flag_hunt') {
+      return;
+    }
+
+    if (this.gameMode === 'obstacle_dash') {
+      if (nearestT > 0.95 && this.active) {
+        const playerWon = (this.aiKart && this.aiKart.mesh) 
+          ? (this.playerKart.mesh.position.z < this.aiKart.mesh.position.z) 
+          : true;
+        this.onGameFinished(playerWon, this.timer);
+      }
+      return;
+    }
+
+    // AI Checkpoints and Lap Tracking
+    const aiT = this.aiProgress;
+    if (aiT > 0.45 && aiT < 0.55) {
+      this.aiLapCheckpoints[0] = true;
+    }
+    if (aiT > 0.8 && aiT < 0.9) {
+      this.aiLapCheckpoints[1] = true;
+    }
+    if (aiT > 0.96 && this.aiLapCheckpoints[0] && this.aiLapCheckpoints[1]) {
+      this.aiLapCheckpoints = [false, false];
+      this.aiLap++;
+
+      if (this.aiLap > this.maxLaps && this.active) {
+        // AI crossed finish line first!
+        this.onGameFinished(false, this.timer);
+        return;
+      }
+    }
+
     if (nearestT > 0.45 && nearestT < 0.55) {
       this.lapCheckpoints[0] = true;
     }
@@ -2166,10 +2790,13 @@ export class GameEngine {
       this.lap++;
 
       if (this.lap > this.maxLaps) {
-        const playerWon = nearestT >= this.aiProgress;
+        const playerWon = (this.lap - 1 + nearestT) >= (this.aiLap - 1 + this.aiProgress);
         this.onGameFinished(playerWon, this.timer);
       } else {
         this.onLapChange(this.lap);
+        if (this.gameMode === 'relay_race') {
+          this.swapRelayKart();
+        }
       }
     }
   }

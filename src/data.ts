@@ -66,30 +66,30 @@ export const KARTS: KartInfo[] = [
     name: '네온 페라리',
     color: 0xa855f7, // Deep Purple
     flameColor: 0x22c55e, // Bright Green flame
-    description: '레전더리 등급 카트. 압도적인 가속력과 초고속 튜닝을 거친 최강의 머신입니다.',
-    rarity: 'Legendary',
+    description: '에픽급 고속 튜닝을 거쳐 안정적인 고속 제어가 가능한 고급형 스포츠 머신입니다.',
+    rarity: 'Rare',
     stats: {
-      speed: 1.55,
-      accel: 0.032,
-      drift: 2.2,
-      handling: 0.036
+      speed: 1.42,
+      accel: 0.027,
+      drift: 2.1,
+      handling: 0.034
     },
-    price: 450
+    price: 320
   },
   {
     id: 'crimson_vortex',
     name: '티탄 레드 포스',
     color: 0xd946ef, // Soft Fuchsia
     flameColor: 0xef4444, // Red spark
-    description: '하이엔드 가챠 엔진. 실시간 고열 압축 배기 시스템을 통해 끊임없는 추진 서지 출력을 수배출합니다.',
-    rarity: 'Legendary',
+    description: '공기역학 배기 시스템을 통해 강력한 드래그 부스터를 획득할 수 있는 고스펙 머신입니다.',
+    rarity: 'Rare',
     stats: {
-      speed: 1.62,
-      accel: 0.034,
-      drift: 2.0,
-      handling: 0.040
+      speed: 1.48,
+      accel: 0.029,
+      drift: 1.9,
+      handling: 0.036
     },
-    price: 850
+    price: 480
   },
   {
     id: 'obsidian_shadow',
@@ -124,6 +124,48 @@ export const KARTS: KartInfo[] = [
 ];
 
 export const MAPS: MapInfo[] = [
+  {
+    id: 'empty_arena',
+    name: '콜로세움 원형 광장 (Colosseum Arena)',
+    description: '장애물 없이 넓게 펼쳐진 빈 원형 경기장 광장. 샌드박스 주행이나 플래그 사수전, 스플래툰 색칠 싸움에 최적화되어 있습니다.',
+    difficulty: '★☆☆',
+    themeColor: 'emerald-400',
+    skyColor: 0x041812, // Dark emerald atmosphere
+    points: [
+      [0, 0, 0],
+      [56, 0, 56],
+      [80, 0, 0],
+      [56, 0, -56],
+      [0, 0, -80],
+      [-56, 0, -56],
+      [-80, 0, 0],
+      [-56, 0, 56],
+      [0, 0, 0]
+    ]
+  },
+  {
+    id: 'straight_dash',
+    name: '장애물 직선 대시 (Straight Dash)',
+    description: '오로지 최고속 경쟁과 빽빽이 들어찬 위험천만한 장애물을 회피 장치로 헤쳐나가는 1선 왕복 없는 초대형 일자 대시 서킷.',
+    difficulty: '★★★',
+    themeColor: 'indigo-500',
+    skyColor: 0x0a0c20, // Neo space void
+    points: [
+      [0, 0, 0],
+      [0, 0, -80],
+      [0, 0, -160],
+      [0, 0, -240],
+      [0, 0, -320],
+      [0, 0, -400],
+      [0, 0, -480],
+      [0, 0, -560],
+      [0, 0, -640],
+      [0, 0, -720],
+      [0, 0, -800],
+      [0, 0, -880],
+      [0, 0, -960]
+    ]
+  },
   {
     id: 'neon_sky_way',
     name: '네온 스카이 웨이 (Neon Sky Way)',

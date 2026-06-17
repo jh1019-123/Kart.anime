@@ -16,6 +16,7 @@ export class PeerNetworkManager {
   onConnectionStatus: (status: string) => void = () => {};
   onPeerError: (err: string) => void = () => {};
   onRoomIdAssigned: (roomId: string) => void = () => {};
+  onItemActionReceived: (payload: any) => void = () => {};
 
   // Lobby synchronization
   lobbyMapId: string = 'neon_sky_way';
@@ -218,6 +219,20 @@ export class PeerNetworkManager {
         }
         break;
 
+      case 'item-action':
+        if (this.role === 'host') {
+          // Relay to all other connections
+          Object.entries(this.connections).forEach(([pId, conn]) => {
+            if (pId !== senderPeerId && conn.open) {
+              conn.send({ type: 'item-action', payload: msg.payload });
+            }
+          });
+        }
+        if (this.onItemActionReceived) {
+          this.onItemActionReceived(msg.payload);
+        }
+        break;
+
       case 'race-telemetry':
         if (this.role === 'host') {
           this.participants = this.participants.map(p => {
@@ -319,6 +334,21 @@ export class PeerNetworkManager {
       type: 'start-game',
       payload: { mapId, gameMode },
     });
+  }
+
+  // Send an item action (banana dropped, missile shot, etc.) to others
+  sendItemAction(payload: any) {
+    if (this.role === 'client') {
+      this.sendToHost({
+        type: 'item-action',
+        payload: { ...payload, senderPeerId: this.myInfo.peerId }
+      });
+    } else if (this.role === 'host') {
+      this.broadcast({
+        type: 'item-action',
+        payload: { ...payload, senderPeerId: this.myInfo.peerId }
+      });
+    }
   }
 
   // Report final results of student clients to teacher host

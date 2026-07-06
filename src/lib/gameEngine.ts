@@ -186,6 +186,42 @@ export const AudioEngine = {
     }
   },
 
+  playClick() {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      const bufferSize = this.ctx.sampleRate * 0.18;
+      const noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+      }
+      
+      const noiseNode = this.ctx.createBufferSource();
+      noiseNode.buffer = noiseBuffer;
+      
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(5800, now);
+      filter.frequency.exponentialRampToValueAtTime(1400, now + 0.16);
+      filter.Q.setValueAtTime(3.4, now);
+      
+      const gainNode = this.ctx.createGain();
+      gainNode.gain.setValueAtTime(0, now);
+      gainNode.gain.linearRampToValueAtTime(0.24, now + 0.015);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+      
+      noiseNode.connect(filter);
+      filter.connect(gainNode);
+      gainNode.connect(this.ctx.destination);
+      
+      noiseNode.start(now);
+    } catch (e) {
+      console.warn("playClick sound failed:", e);
+    }
+  },
+
   playBoost() {
     if (!this.ctx) return;
     try {
@@ -416,27 +452,47 @@ export const AudioEngine = {
     this.bgmIsPlaying = true;
     this.bgmStep = 0;
 
-    let stepDuration = 0.103; // ~145 BPM sixteenth notes
+    let stepDuration = 0.110; // ~136 BPM bouncy sixteenth notes
     let waveType: 'sine' | 'triangle' | 'sawtooth' | 'square' = 'sawtooth';
-    let filterFreq = 1600;
+    let filterFreq = 1500;
     
-    // Default Map Track: Neon Sky Way (High energy Electronic/Trance style)
+    // Addictive, Heroic, and exciting Brawl Stars-inspired G-Dorian syncopated theme
     let mNotes = [
-      329.63, 329.63, 392.00, 329.63, 440.00, 0, 440.00, 493.88,
-      523.25, 523.25, 587.33, 523.25, 493.88, 440.00, 392.00, 0,
-      329.63, 0, 392.00, 0, 440.00, 440.00, 523.25, 440.00,
-      587.33, 587.33, 659.25, 587.33, 523.25, 493.88, 392.00, 0,
-      329.63, 329.63, 392.00, 329.63, 440.00, 0, 440.00, 493.88,
-      523.25, 523.25, 587.33, 880.00, 783.99, 698.46, 587.33, 0,
-      659.25, 659.25, 698.46, 783.99, 880.00, 0, 880.00, 987.77,
-      1046.50, 987.77, 880.00, 783.99, 659.25, 587.33, 493.88, 0
+      // Bar 1
+      329.63, 0, 329.63, 493.88, 0, 440.00, 0, 392.00,
+      369.99, 0, 392.00, 440.00, 493.88, 0, 329.63, 0,
+      // Bar 2
+      293.66, 0, 293.66, 440.00, 0, 392.00, 0, 369.99,
+      329.63, 0, 369.99, 392.00, 440.00, 493.88, 587.33, 0,
+      // Bar 3
+      659.25, 0, 659.25, 493.88, 0, 440.00, 0, 493.88,
+      587.33, 0, 493.88, 0, 440.00, 392.00, 329.63, 0,
+      // Bar 4
+      493.88, 0, 493.88, 587.33, 0, 554.37, 0, 493.88,
+      440.00, 392.00, 369.99, 329.63, 293.66, 369.99, 329.63, 0,
+      // Bar 5 (Rise and Intensify)
+      392.00, 392.00, 493.88, 0, 440.00, 440.00, 554.37, 0,
+      493.88, 0, 587.33, 0, 659.25, 0, 493.88, 0,
+      // Bar 6
+      783.99, 783.99, 739.99, 659.25, 0, 587.33, 0, 493.88,
+      440.00, 0, 493.88, 587.33, 659.25, 0, 783.99, 0,
+      // Bar 7 (Heroic Fanfare)
+      880.00, 880.00, 783.99, 739.99, 0, 659.25, 0, 587.33,
+      493.88, 0, 587.33, 659.25, 783.99, 0, 880.00, 0,
+      // Bar 8 (Epic Descent Fill)
+      987.77, 0, 880.00, 783.99, 739.99, 659.25, 587.33, 493.88,
+      440.00, 392.00, 369.99, 329.63, 493.88, 369.99, 329.63, 0
     ];
 
     let bNotes = [
-      82.41, 82.41, 110.00, 110.00,
-      98.00, 98.00, 87.31, 87.31,
-      82.41, 82.41, 98.00, 98.00,
-      110.00, 110.00, 123.47, 123.47
+      82.41, 164.81, 82.41, 82.41,   // E minor
+      73.42, 146.83, 73.42, 73.42,   // D major
+      65.41, 130.81, 65.41, 65.41,   // C major
+      61.74, 123.47, 61.74, 61.74,   // B major
+      98.00, 196.00, 98.00, 98.00,   // G major
+      110.00, 220.00, 110.00, 110.00, // A major
+      61.74, 123.47, 61.74, 61.74,   // B minor
+      82.41, 164.81, 82.41, 123.47   // E minor
     ];
 
     if (mapId === 'cyberspace_tunnel') {
@@ -559,16 +615,47 @@ export const AudioEngine = {
     const playBassNote = (freq: number, time: number) => {
       if (!this.ctx) return;
       try {
+        const cycleStep = this.bgmStep % 1024;
+        const cycleBar = Math.floor(cycleStep / 16);
+        const isBridge = (cycleBar >= 24 && cycleBar <= 31);
+        const isClimax = (cycleBar >= 36 && cycleBar <= 55);
+        
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-        osc.type = 'triangle';
+        
+        // Climax drops get a heavy sawtooth bass for incredible drive
+        osc.type = isClimax ? 'sawtooth' : 'triangle';
         osc.frequency.setValueAtTime(freq, time);
         
-        gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.04, time + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+        let targetBassVol = isClimax ? 0.065 : 0.04;
+        if (isBridge) {
+          targetBassVol = 0.02; // soft bass during the filtered bridge
+        }
         
-        osc.connect(gain);
+        // Dynamic Sidechain Compression Effect: duck the bass volume on the major kick beat
+        const isKickStep = (cycleStep % 4 === 0);
+        if (isClimax && isKickStep) {
+          gain.gain.setValueAtTime(0, time);
+          gain.gain.linearRampToValueAtTime(0.001, time + 0.012); // crush instantly
+          gain.gain.linearRampToValueAtTime(targetBassVol, time + 0.10); // swell up dynamically
+          gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.14);
+        } else {
+          gain.gain.setValueAtTime(0, time);
+          gain.gain.linearRampToValueAtTime(targetBassVol, time + 0.008);
+          gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.13);
+        }
+        
+        if (isClimax) {
+          // Warm low-pass filter routing for the climax bass to prevent high frequency noise distortion
+          const bassFilter = this.ctx.createBiquadFilter();
+          bassFilter.type = 'lowpass';
+          bassFilter.frequency.setValueAtTime(280, time);
+          osc.connect(bassFilter);
+          bassFilter.connect(gain);
+        } else {
+          osc.connect(gain);
+        }
+        
         gain.connect(this.ctx.destination);
         osc.start(time);
         osc.stop(time + 0.14);
@@ -578,52 +665,146 @@ export const AudioEngine = {
     const playMelodyNote = (freq: number, time: number) => {
       if (!this.ctx || freq <= 0) return;
       try {
-        const osc = this.ctx.createOscillator();
+        const cycleStep = this.bgmStep % 1024;
+        const cycleBar = Math.floor(cycleStep / 16);
+        const isBridge = (cycleBar >= 24 && cycleBar <= 31);
+        const isBuild = (cycleBar >= 32 && cycleBar <= 35);
+        const isClimax = (cycleBar >= 36 && cycleBar <= 55);
+
+        const osc1 = this.ctx.createOscillator();
+        const osc2 = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
         const filter = this.ctx.createBiquadFilter();
         
-        osc.type = waveType;
-        osc.frequency.setValueAtTime(freq, time);
+        let activeWaveType = waveType;
+        if (isClimax) {
+          activeWaveType = 'sawtooth'; // Force electric saws for incredible energy on drop!
+        }
+        
+        osc1.type = activeWaveType;
+        osc1.frequency.setValueAtTime(freq, time);
+        
+        osc2.type = activeWaveType;
+        // Detune by 14 cents for a beautiful chorused fat synth lead (brassy arcade vibe)
+        osc2.frequency.setValueAtTime(freq * Math.pow(2, 14 / 1200), time);
         
         filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(filterFreq, time);
         
-        gain.gain.setValueAtTime(0, time);
-        // Slightly lower melody gain to prevent distortion-related clipping
-        gain.gain.linearRampToValueAtTime(0.015, time + 0.01);
-        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.22);
+        // Calculate dynamic low-pass sweep
+        let activeFilterFreq = filterFreq;
+        if (isBridge) {
+          // Sweep filter down to 320Hz to create a gorgeous "underwater" bridge
+          const progress = (cycleStep - 384) / 128;
+          activeFilterFreq = filterFreq * (1.0 - progress * 0.75);
+        } else if (isBuild) {
+          // Sweep open the filter like a laser rise!
+          const progress = (cycleStep - 512) / 64;
+          activeFilterFreq = 400 + progress * (filterFreq * 1.6 - 400);
+        } else if (isClimax) {
+          activeFilterFreq = filterFreq * 1.8; // Open wide for bright, crispy solos!
+        }
         
-        osc.connect(filter);
+        filter.frequency.setValueAtTime(activeFilterFreq, time);
+        
+        let startVol = 0.012;
+        if (isBridge) {
+          startVol = 0.007; // softer melody
+        } else if (isClimax) {
+          startVol = 0.024; // louder climax lead
+        }
+        
+        // Pumping sidechain on the lead synth matching key beats
+        const isKickStep = (cycleStep % 4 === 0);
+        if (isClimax && isKickStep) {
+          gain.gain.setValueAtTime(0, time);
+          gain.gain.linearRampToValueAtTime(0.001, time + 0.012);
+          gain.gain.linearRampToValueAtTime(startVol, time + 0.11);
+          gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.25);
+        } else {
+          gain.gain.setValueAtTime(0, time);
+          gain.gain.linearRampToValueAtTime(startVol, time + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.24);
+        }
+        
+        osc1.connect(filter);
+        osc2.connect(filter);
+        
+        // Climax Supersaw layered stack
+        let osc3: OscillatorNode | null = null;
+        let subOsc: OscillatorNode | null = null;
+        if (isClimax) {
+          osc3 = this.ctx.createOscillator();
+          osc3.type = 'sawtooth';
+          osc3.frequency.setValueAtTime(freq * Math.pow(2, -28 / 1200), time); // Detuned wide oppositely
+          osc3.connect(filter);
+          
+          subOsc = this.ctx.createOscillator();
+          subOsc.type = 'sine';
+          subOsc.frequency.setValueAtTime(freq * 0.5, time); // Huge 1-octave low support
+          subOsc.connect(filter);
+        }
+        
         filter.connect(gain);
         gain.connect(this.ctx.destination);
         
-        osc.start(time);
-        osc.stop(time + 0.25);
+        osc1.start(time);
+        osc2.start(time);
+        if (osc3) osc3.start(time);
+        if (subOsc) subOsc.start(time);
+        
+        osc1.stop(time + 0.25);
+        osc2.stop(time + 0.25);
+        if (osc3) osc3.stop(time + 0.25);
+        if (subOsc) subOsc.stop(time + 0.25);
       } catch (e) {}
     };
 
-    const playKick = (time: number) => {
+    const playKick = (time: number, isClimax: boolean = false) => {
       if (!this.ctx) return;
       try {
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(100, time);
-        osc.frequency.exponentialRampToValueAtTime(36, time + 0.08);
         
-        // Remove click: start at 0 gain, ramp to peak in 3ms, fade smoothly
+        // High-definition click transient layer for that extremely satisfying mechanical "kick" punch
+        const transientOsc = this.ctx.createOscillator();
+        const transientGain = this.ctx.createGain();
+        
+        osc.type = 'triangle';
+        const startFreq = isClimax ? 180 : 130;
+        const endFreq = isClimax ? 30 : 38;
+        osc.frequency.setValueAtTime(startFreq, time);
+        osc.frequency.exponentialRampToValueAtTime(endFreq, time + 0.09);
+        
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.12, time + 0.003);
-        gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.1);
+        const peakVol = isClimax ? 0.45 : 0.26;
+        gain.gain.linearRampToValueAtTime(peakVol, time + 0.003);
+        const decayLen = isClimax ? 0.15 : 0.12;
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + decayLen);
         
         osc.connect(gain);
         gain.connect(this.ctx.destination);
+        
+        // Transient Click layer
+        transientOsc.type = 'sine';
+        transientOsc.frequency.setValueAtTime(400, time);
+        transientOsc.frequency.exponentialRampToValueAtTime(100, time + 0.015);
+        
+        transientGain.gain.setValueAtTime(0, time);
+        transientGain.gain.linearRampToValueAtTime(isClimax ? 0.18 : 0.11, time + 0.001);
+        transientGain.gain.exponentialRampToValueAtTime(0.0001, time + 0.015);
+        
+        transientOsc.connect(transientGain);
+        transientGain.connect(this.ctx.destination);
+        
         osc.start(time);
-        osc.stop(time + 0.12);
+        osc.stop(time + decayLen + 0.02);
+        
+        transientOsc.start(time);
+        transientOsc.stop(time + 0.03);
       } catch (e) {}
     };
 
-    const playSnare = (time: number) => {
+    const playSnare = (time: number, volMultiplier: number = 1.0) => {
       if (!this.ctx || !noiseBuffer) return;
       try {
         const source = this.ctx.createBufferSource();
@@ -633,9 +814,8 @@ export const AudioEngine = {
         filter.frequency.value = 900;
         
         const gain = this.ctx.createGain();
-        // Remove click: start at 0, ramp to peak in 3ms, fade smoothly
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.026, time + 0.003);
+        gain.gain.linearRampToValueAtTime(0.026 * volMultiplier, time + 0.003);
         gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.12);
         
         source.connect(filter);
@@ -646,19 +826,18 @@ export const AudioEngine = {
       } catch (e) {}
     };
 
-    const playHihat = (time: number) => {
+    const playHihat = (time: number, volMultiplier: number = 1.0) => {
       if (!this.ctx || !noiseBuffer) return;
       try {
         const source = this.ctx.createBufferSource();
         source.buffer = noiseBuffer;
         const filter = this.ctx.createBiquadFilter();
         filter.type = 'highpass';
-        filter.frequency.value = 10000; // Even higher frequency for a sleek, clean, non-intrusive sound
+        filter.frequency.value = 10000;
         
         const gain = this.ctx.createGain();
-        // Eliminate the ticking artifact: make hi-hat extremely soft, start at 0, ramp to peak over 3ms, then decay
         gain.gain.setValueAtTime(0, time);
-        gain.gain.linearRampToValueAtTime(0.0025, time + 0.003); // Very soft whisper, completely non-annoying
+        gain.gain.linearRampToValueAtTime(0.0025 * volMultiplier, time + 0.003);
         gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.04);
         
         source.connect(filter);
@@ -679,23 +858,148 @@ export const AudioEngine = {
       const currentStep = this.bgmStep % sequenceLength;
       const barIdx = Math.floor((this.bgmStep % 32) / 8);
       
-      const stepInBeat = currentStep % 4;
-      if (stepInBeat === 0) {
-        playKick(scheduleTime);
-      } else if (stepInBeat === 2) {
-        playSnare(scheduleTime);
+      const isCustomElectronic = ['cyberspace_tunnel', 'cosmic_highway', 'lava_crevice', 'frozen_glacier', 'lobby'].includes(mapId);
+      
+      // Master song structure (64 Bars cycle)
+      const cycleStep = this.bgmStep % 1024;
+      const cycleBar = Math.floor(cycleStep / 16);
+      
+      const isBridge = (cycleBar >= 24 && cycleBar <= 31);
+      const isBuild = (cycleBar >= 32 && cycleBar <= 35);
+      const isClimax = (cycleBar >= 36 && cycleBar <= 55);
+
+      // --- DYNAMIC DRUM SCHEDULER ---
+      let triggerK = false;
+      let triggerS = false;
+      let triggerH = false;
+      
+      if (isBridge) {
+        // Soft click hi-hat syncopated pattern on bridge, removing heavy kicks and snares
+        if (cycleStep % 4 === 2) triggerH = true;
+        if (cycleStep % 8 === 4) triggerS = true; // woodblock-like tick
+      } else if (isBuild) {
+        // Accelerated snare drum rolls building tension
+        if (cycleBar === 32 || cycleBar === 33) {
+          if (cycleStep % 4 === 0) triggerK = true;
+          if (cycleStep % 4 === 2) triggerS = true;
+        } else if (cycleBar === 34) {
+          if (cycleStep % 2 === 0) {
+            triggerK = true;
+            if (cycleStep % 4 === 2) triggerS = true;
+          }
+        } else if (cycleBar === 35) {
+          // Intense 16th roll (every step triggers drums!)
+          triggerK = true;
+          triggerS = true;
+          triggerH = true;
+        }
+      } else if (isClimax) {
+        // High-octane climax drop with big 4-on-the-floor kick plus syncopations
+        const stepInBeat = cycleStep % 4;
+        if (stepInBeat === 0) {
+          triggerK = true;
+        } else if (stepInBeat === 2) {
+          triggerS = true;
+        } else {
+          triggerH = true;
+        }
+        // Extra fast kick-double on drop bars
+        if (cycleStep % 16 === 10 || cycleStep % 16 === 14) {
+          triggerK = true;
+        }
       } else {
-        playHihat(scheduleTime);
+        // Standard normal track beats
+        if (isCustomElectronic) {
+          const stepInBeat = currentStep % 4;
+          if (stepInBeat === 0) {
+            triggerK = true;
+          } else if (stepInBeat === 2) {
+            triggerS = true;
+          } else {
+            triggerH = true;
+          }
+        } else {
+          const drumStep = currentStep % 16;
+          if (drumStep === 0 || drumStep === 8 || drumStep === 10 || drumStep === 14) {
+            triggerK = true;
+          }
+          if (drumStep === 4 || drumStep === 12) {
+            triggerS = true;
+          }
+          if (drumStep === 2 || drumStep === 6 || drumStep === 11 || drumStep === 15) {
+            triggerH = true;
+          }
+        }
+      }
+
+      // Fire drums
+      if (triggerK) playKick(scheduleTime, isClimax);
+      if (triggerS) {
+        let vol = 1.0;
+        if (isBridge) vol = 0.4;
+        if (isClimax) vol = 1.35;
+        playSnare(scheduleTime, vol);
+      }
+      if (triggerH) {
+        let vol = isClimax ? 1.5 : 1.0;
+        playHihat(scheduleTime, vol);
       }
       
+      // --- BASS SEQUENCER ---
       if (currentStep % 2 === 0) {
-        const bassFreq = bNotes[barIdx * 4 + Math.floor((currentStep % 8) / 2)] || 110;
-        playBassNote(bassFreq, scheduleTime);
+        let bassFreq = 110;
+        if (isCustomElectronic) {
+          bassFreq = bNotes[barIdx * 4 + Math.floor((currentStep % 8) / 2)] || 110;
+        } else {
+          const bassStep = Math.floor(currentStep / 2) % bNotes.length;
+          bassFreq = bNotes[bassStep] || 110;
+        }
+        
+        let finalBassFreq = bassFreq;
+        if (isBridge) {
+          // Play beautiful minor shift progression chords in the bridge
+          const stage = Math.floor((cycleStep - 384) / 32) % 4;
+          const multi = [0.75, 0.85, 1.0, 0.9];
+          finalBassFreq = bassFreq * multi[stage];
+        } else if (isClimax) {
+          // Drop octave for deep speaker rattling subs
+          if (cycleStep % 4 === 2) {
+            finalBassFreq = bassFreq * 0.5;
+          }
+        }
+        playBassNote(finalBassFreq, scheduleTime);
       }
       
-      const melodyFreq = mNotes[currentStep];
-      if (melodyFreq && melodyFreq > 0) {
-        playMelodyNote(melodyFreq, scheduleTime);
+      // --- MELODY SEQUENCER ---
+      let melodyFreq = mNotes[currentStep];
+      let finalMelodyFreq = melodyFreq;
+      
+      if (isBridge) {
+        // Match minor chords transposition
+        const stage = Math.floor((cycleStep - 384) / 32) % 4;
+        const multi = [0.75, 0.85, 1.0, 0.9];
+        if (melodyFreq && melodyFreq > 0) {
+          finalMelodyFreq = melodyFreq * multi[stage];
+        }
+      } else if (isBuild) {
+        // High rapid cyber-arpeggio climbing to heaven!
+        const chordRoots = [261.63, 293.66, 329.63, 392.00]; // C - D - E - G
+        const root = chordRoots[Math.floor((cycleStep - 512) / 16) % 4];
+        const arpPattern = [1.0, 1.2, 1.25, 1.5, 1.0, 1.2, 1.5, 1.875];
+        finalMelodyFreq = root * arpPattern[cycleStep % 8];
+        
+        // Pitch rise
+        const climb = 1.0 + (cycleStep - 512) / 64; 
+        finalMelodyFreq *= climb;
+      } else if (isClimax) {
+        // Peak energetic double octave transposition (+12 semitones!)
+        if (melodyFreq && melodyFreq > 0) {
+          finalMelodyFreq = melodyFreq * 2.0;
+        }
+      }
+      
+      if (finalMelodyFreq && finalMelodyFreq > 0) {
+        playMelodyNote(finalMelodyFreq, scheduleTime);
       }
       
       this.bgmStep++;
@@ -741,6 +1045,19 @@ export class GameEngine {
   aiBoosterActive = false;
   aiBoosterTimer = 0;
   playerAuraId = 'none';
+  playerKartId = 'pink_thunder';
+  aiKartId = 'blue_lightning';
+  myParticipantIndex = 0;
+
+  isActiveRunner(): boolean {
+    if (this.gameMode !== 'relay_race') return true;
+    const currentLap = this.lap;
+    if (currentLap === 1 || currentLap === 3) {
+      return this.myParticipantIndex === 0 || this.myParticipantIndex === 2;
+    } else {
+      return this.myParticipantIndex === 1 || this.myParticipantIndex === 3;
+    }
+  }
 
   speed = 0;
   maxSpeed = 1.15;
@@ -751,6 +1068,10 @@ export class GameEngine {
   turnSpeed = 0.03;
 
   isDrifting = false;
+  driftCount = 0;
+  boostersUsed = 0;
+  maxSpeedReached = 0;
+  itemBoxesCollected = 0;
   driftDirection = 0;
   driftAngle = 0;
   lastDriftKey = false;
@@ -779,9 +1100,21 @@ export class GameEngine {
   onCoinCollected?: () => void;
   onPaintTurfRatio?: (playerRatio: number) => void;
   onFlagScoreChange?: (playerScore: number, aiScore: number) => void;
+  aiFinishedTimeRemaining: number | null = null;
+  aiFinishedTime: number | null = null;
 
   paints: Array<{ mesh: THREE.Mesh; owner: 'player' | 'ai' }> = [];
   paintTimer = 0;
+
+  // 3D vertical offsets for elevations & jump mechanics
+  verticalVelocity = 0;
+  verticalOffset = 0;
+  aiVerticalVelocity = 0;
+  aiVerticalOffset = 0;
+  // Track features groups
+  boosterPadsGroup = new THREE.Group();
+  jumpRampsGroup = new THREE.Group();
+  shortcutsGroup = new THREE.Group();
 
   playerFlagScore = 0;
   aiFlagScore = 0;
@@ -829,7 +1162,9 @@ export class GameEngine {
     onPlayerCrashNotification: () => void,
     ghostConfig?: { isGhost: boolean; targetTimeMs: number; ghostColorHex: number },
     gameModeParam?: string,
-    playerAuraIdParam?: string
+    playerAuraIdParam?: string,
+    playerKartIdParam?: string,
+    aiKartIdParam?: string
   ) {
     this.container = container;
     this.gameMode = gameModeParam || 'speed';
@@ -840,6 +1175,8 @@ export class GameEngine {
     this.turnSpeed = stats.handling;
     this.ghostConfig = ghostConfig;
     this.playerAuraId = playerAuraIdParam || 'none';
+    this.playerKartId = playerKartIdParam || 'pink_thunder';
+    this.aiKartId = aiKartIdParam || 'blue_lightning';
 
     if (this.gameMode === 'time_attack') {
       this.maxLaps = 1;
@@ -847,6 +1184,8 @@ export class GameEngine {
       this.maxLaps = 10;
     } else if (this.gameMode === 'obstacle_dash') {
       this.maxLaps = 1;
+    } else if (this.gameMode === 'relay_race') {
+      this.maxLaps = 4;
     } else {
       this.maxLaps = 3;
     }
@@ -863,8 +1202,8 @@ export class GameEngine {
     this.initTrack(mapInfo.points);
     this.init3D(mapInfo.skyColor);
     this.buildTrack();
-    this.playerKart = this.createKart(playerKartColor, playerFlameColor, true, this.playerAuraId);
-    this.aiKart = this.createKart(aiKartColor, 0xfacc15, false);
+    this.playerKart = this.createKart(playerKartColor, playerFlameColor, true, this.playerAuraId, this.playerKartId);
+    this.aiKart = this.createKart(aiKartColor, 0xfacc15, false, undefined, this.aiKartId);
 
     // If ghost mode is active, make the AI kart translucent and colorized
     if (this.ghostConfig && this.ghostConfig.isGhost) {
@@ -947,27 +1286,35 @@ export class GameEngine {
     this.boosterGeometry = new THREE.ConeGeometry(1.0, 1.0, 4);
     this.boosterGeometry.rotateX(-Math.PI / 2);
 
-    // Light Setup
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.15);
+    // Light Setup - Brightened significantly as requested to illuminate the overall map
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2.3);
     this.scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 1.6);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2.4);
     dirLight.position.set(50, 200, 50);
     this.scene.add(dirLight);
 
-    const cyanLight = new THREE.PointLight(0x22d3ee, 2.0, 400);
+    const cyanLight = new THREE.PointLight(0x22d3ee, 3.5, 500);
     cyanLight.position.set(0, 40, -50);
     this.scene.add(cyanLight);
 
-    const pinkLight = new THREE.PointLight(0xf43f5e, 2.0, 400);
+    const pinkLight = new THREE.PointLight(0xf43f5e, 3.5, 500);
     pinkLight.position.set(120, 30, -100);
     this.scene.add(pinkLight);
 
     this.scene.add(this.decorativeGroup);
     this.scene.add(this.itemsGroup);
+    this.scene.add(this.boosterPadsGroup);
+    this.scene.add(this.jumpRampsGroup);
+    this.scene.add(this.shortcutsGroup);
   }
 
   buildTrack() {
+    this.decorativeGroup.clear();
+    this.boosterPadsGroup.clear();
+    this.jumpRampsGroup.clear();
+    this.shortcutsGroup.clear();
+
     if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
       // Render completely flat solid circular arena platform
       const radius = 150;
@@ -1079,43 +1426,115 @@ export class GameEngine {
          const centerDashGeo = new THREE.BoxGeometry(0.3, 0.05, 2.5);
          const centerDashMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
          const dash = new THREE.Mesh(centerDashGeo, centerDashMat);
-         dash.position.copy(pt).add(new THREE.Vector3(0, 0.05, 0));
-         dash.lookAt(pt.clone().add(tangent));
+         dash.position.set(pt.x, pt.y * 0.01 + 0.05, pt.z);
+         dash.lookAt(new THREE.Vector3(pt.x, pt.y * 0.01, pt.z).add(tangent));
          this.scene.add(dash);
        }
 
        // Border dots placed exactly near the 21.8 units edge (slightly inside the 22.0 wide tube)
        const leftPos = pt.clone().add(binormal.clone().multiplyScalar(-21.6));
        const leftRing = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
-       leftRing.position.copy(leftPos).add(new THREE.Vector3(0, 0.1, 0));
+       leftRing.position.set(leftPos.x, leftPos.y * 0.01 + 0.1, leftPos.z);
        this.scene.add(leftRing);
 
        const rightPos = pt.clone().add(binormal.clone().multiplyScalar(21.6));
        const rightRing = new THREE.Mesh(new THREE.SphereGeometry(0.4, 5, 5), new THREE.MeshBasicMaterial({ color: 0xf43f5e }));
-       rightRing.position.copy(rightPos).add(new THREE.Vector3(0, 0.1, 0));
+       rightRing.position.set(rightPos.x, rightPos.y * 0.01 + 0.1, rightPos.z);
        this.scene.add(rightRing);
 
-       // Trees shifted further outward to 30.0 units offset
+       // Trees shifted further outward to 30.0 units offset and styled seasonally
        if (i % 6 === 0) {
          const treePos = pt.clone().add(binormal.clone().multiplyScalar(30));
          const h = 7 + Math.random() * 8;
+
+         let treeColor = 0x22d3ee;
+         let treeEmissive = 0x06b6d4;
+
+         if (this.mapInfo) {
+           if (this.mapInfo.id === 'spring_cherry_road') {
+             // Spring: beautiful pink and light cherry blossom colors
+             treeColor = Math.random() > 0.5 ? 0xfba5c9 : 0xfff0f6;
+             treeEmissive = 0xf472b6;
+           } else if (this.mapInfo.id === 'summer_coconut_coast') {
+             // Summer: emerald greens & coconut sands
+             treeColor = Math.random() > 0.5 ? 0x10b981 : 0x0ea5e9;
+             treeEmissive = 0x059669;
+           } else if (this.mapInfo.id === 'autumn_maple_valley') {
+             // Autumn: gorgeous copper gold, warm oranges, and deep crimson maple
+             treeColor = Math.random() > 0.5 ? 0xeab308 : 0xe11d48;
+             treeEmissive = 0xea580c;
+           } else if (this.mapInfo.id === 'winter_snowhead_glacier' || this.mapInfo.id === 'frozen_glacier') {
+             // Winter: deep crystal ice white and cyber blues
+             treeColor = Math.random() > 0.5 ? 0xffffff : 0x93c5fd;
+             treeEmissive = 0x38bdf8;
+           } else {
+             // Default neon cyan / pink trees
+             treeColor = Math.random() > 0.5 ? 0x22d3ee : 0xec4899;
+             treeEmissive = Math.random() > 0.5 ? 0x06b6d4 : 0xdb2777;
+           }
+         }
+
          const tree = new THREE.Mesh(
            new THREE.ConeGeometry(3.5, h, 4),
            new THREE.MeshStandardMaterial({
-             color: Math.random() > 0.5 ? 0x22d3ee : 0xec4899,
+             color: treeColor,
              roughness: 0.1,
              metalness: 0.5,
-             emissive: Math.random() > 0.5 ? 0x06b6d4 : 0xdb2777,
+             emissive: treeEmissive,
              emissiveIntensity: 0.45
            })
          );
-         tree.position.copy(treePos);
+         tree.position.set(treePos.x, treePos.y * 0.01, treePos.z);
          tree.position.y += h / 2;
          this.decorativeGroup.add(tree);
+        }
+
+        // Decorate long courses uniquely: Floating glowing octahedron crystals & beacon bases!
+        const isLongCourse = ['spring_cherry_road', 'summer_coconut_coast', 'autumn_maple_valley', 'winter_snowhead_glacier'].includes(this.mapInfo?.id || '');
+        if (isLongCourse && i % 8 === 0 && this.mapInfo) {
+          const sideFactor = (i % 16 === 0) ? -1 : 1;
+          const decoPos = pt.clone().add(binormal.clone().multiplyScalar(sideFactor * 26));
+
+          let gemColor = 0xff0055;
+          let gemEmissive = 0xff0055;
+
+          if (this.mapInfo.id === 'spring_cherry_road') {
+            gemColor = 0xfbcfe8; // Cherry blush pink
+            gemEmissive = 0xdb2777;
+          } else if (this.mapInfo.id === 'summer_coconut_coast') {
+            gemColor = 0x34d399; // Sea emerald green
+            gemEmissive = 0x059669;
+          } else if (this.mapInfo.id === 'autumn_maple_valley') {
+            gemColor = 0xfb923c; // Warm maple orange
+            gemEmissive = 0xea580c;
+          } else if (this.mapInfo.id === 'winter_snowhead_glacier') {
+            gemColor = 0x38bdf8; // Ice glacier blue
+            gemEmissive = 0x0284c7;
+          }
+
+          // Rotating Double-cone crystal
+          const gemGeo = new THREE.OctahedronGeometry(2.5, 0);
+          const gemMat = new THREE.MeshStandardMaterial({
+            color: gemColor,
+            roughness: 0.1,
+            metalness: 0.9,
+            emissive: gemEmissive,
+            emissiveIntensity: 0.9
+          });
+          const gemMesh = new THREE.Mesh(gemGeo, gemMat);
+          gemMesh.position.set(decoPos.x, decoPos.y * 0.01 + 4.5 + Math.sin(i) * 1.5, decoPos.z);
+          this.decorativeGroup.add(gemMesh);
+
+          // Glowing light beam base
+          const beaconGeo = new THREE.CylinderGeometry(1.6, 1.6, 0.3, 8);
+          const beaconMat = new THREE.MeshBasicMaterial({ color: gemEmissive, transparent: true, opacity: 0.65 });
+          const beaconMesh = new THREE.Mesh(beaconGeo, beaconMat);
+          beaconMesh.position.set(decoPos.x, decoPos.y * 0.01 + 0.1, decoPos.z);
+          this.decorativeGroup.add(beaconMesh);
        }
     }
 
-    // Finish Gate scaled to match 22 units lane radius
+    // Finish Gate scaled to match 22 units lane radius and height aligned
     const gateGroup = new THREE.Group();
     const p1 = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.0, 16, 6), new THREE.MeshBasicMaterial({ color: 0x334155 }));
     p1.position.set(-23, 8, 0);
@@ -1131,41 +1550,384 @@ export class GameEngine {
     gateGroup.add(p1, p2, cross, banner);
     const tg = this.trackSpline.getTangentAt(0).normalize();
     gateGroup.lookAt(tg);
-    gateGroup.position.copy(this.trackSpline.getPointAt(0));
+    const startPt = this.trackSpline.getPointAt(0);
+    gateGroup.position.set(startPt.x, startPt.y * 0.01, startPt.z);
     this.scene.add(gateGroup);
+
+    // Spawn Custom Seasonal map elements (Booster Pads and Jump Ramps removed per user request: "부스트 패달이나 점핑트랩을 없애줘.")
+    if (this.mapInfo) {
+      if (this.mapInfo.shortcuts) {
+        this.mapInfo.shortcuts.forEach(sc => {
+          const scPos = new THREE.Vector3(sc[0] * 1.75, sc[1] * 1.75 * 0.01, sc[2] * 1.75);
+          const ringGeo = new THREE.TorusGeometry(8.5, 0.65, 8, 24);
+          const ringMat = new THREE.MeshBasicMaterial({
+            color: 0xf97316, // Orange neon entry ring
+            transparent: true,
+            opacity: 0.95
+          });
+          const arch = new THREE.Mesh(ringGeo, ringMat);
+          arch.position.copy(scPos).add(new THREE.Vector3(0, 4.0, 0));
+
+          const t = this.getNearestTrackSplinePoint(scPos);
+          const tangent = this.trackSpline.getTangentAt(t).normalize();
+          arch.lookAt(arch.position.clone().add(tangent));
+
+          this.shortcutsGroup.add(arch);
+        });
+      }
+    }
   }
 
-  createKart(colorHex: number, nozzleColorHex: number, isPlayer: boolean = false, auraId?: string) {
+  createKart(colorHex: number, nozzleColorHex: number, isPlayer: boolean = false, auraId?: string, kartId?: string) {
     const kartGroup = new THREE.Group();
 
-    // Chassis body
+    // Chassis body - High gloss, polished metallic look
     const bodyMat = new THREE.MeshStandardMaterial({
       color: colorHex,
-      metalness: 0.9,
-      roughness: 0.15
+      metalness: 0.96,
+      roughness: 0.08
     });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.7, 4.2), bodyMat);
-    body.position.y = 0.5;
+    
+    // Sleek chamfer-like bevels on the core chassis using layered geometry
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.65, 4.2), bodyMat);
+    body.position.y = 0.48;
     kartGroup.add(body);
 
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.4, 1.4), bodyMat);
-    nose.position.set(0, 0.4, 2.3);
+    // Beveled hood-scoop accent on top of body
+    const scoopMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.92, roughness: 0.12 });
+    const hoodScoop = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.18, 1.6), scoopMat);
+    hoodScoop.position.set(0, 0.85, 0.5);
+    kartGroup.add(hoodScoop);
+
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.35, 1.4), bodyMat);
+    nose.position.set(0, 0.36, 2.3);
     kartGroup.add(nose);
 
-    const wingMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.4 });
-    const wing = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.3, 1.0), wingMat);
+    // Front spoiler/splitter - sharp, high-performance racing lip
+    const splitterMat = new THREE.MeshStandardMaterial({ color: 0x090d16, metalness: 0.95, roughness: 0.05 });
+    const splitter = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.06, 0.65), splitterMat);
+    splitter.position.set(0, 0.20, 2.9);
+    kartGroup.add(splitter);
+
+    // Dynamic racing stripe lines along the chassis flanks (Adds sleek metallic detail)
+    const stripeMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, metalness: 0.98, roughness: 0.04 });
+    const stripeL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 3.6), stripeMat);
+    stripeL.position.set(-1.31, 0.48, 0.1);
+    const stripeR = stripeL.clone();
+    stripeR.position.x = 1.31;
+    kartGroup.add(stripeL, stripeR);
+
+    // Thinner, sharper rear wing spoiler foil
+    const wingMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.9, roughness: 0.15 });
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.15, 1.0), wingMat);
     wing.position.set(0, 1.7, -2.2);
 
-    const supLeft = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.3, 0.25), wingMat);
+    const supLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, 1.3, 0.2), wingMat);
     supLeft.position.set(-1.1, 1.0, -2.1);
     const supRight = supLeft.clone();
     supRight.position.x = 1.1;
-    kartGroup.add(wing, supLeft, supRight);
+    
+    // Sharp metal endplates on wingtips for an aerodynamic silhouette
+    const endMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.96, roughness: 0.06 });
+    const endL = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.7, 1.0), endMat);
+    endL.position.set(-1.61, 1.7, -2.2);
+    const endR = endL.clone();
+    endR.position.x = 1.61;
+    
+    kartGroup.add(wing, supLeft, supRight, endL, endR);
 
-    // Wheels
+    // Custom parts based on Kart ID to give them highly stylish, distinctive properties
+    if (kartId === 'pink_thunder') {
+      // Primary common kart: Dual mini booster outer exhaust cylinders & high-glowing baby-blue rear spoiler plate
+      const tubeMat = new THREE.MeshStandardMaterial({ color: 0xff007f, metalness: 0.8, roughness: 0.2 });
+      const tubeL = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.85, 8), tubeMat);
+      tubeL.rotateX(Math.PI / 2);
+      tubeL.position.set(-0.6, 0.55, -2.1);
+      const tubeR = tubeL.clone();
+      tubeR.position.x = 0.6;
+      kartGroup.add(tubeL, tubeR);
+
+      // Sweet circular light-cyan wing emblem
+      const badge = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.12, 10), new THREE.MeshBasicMaterial({ color: 0x22d3ee }));
+      badge.rotateX(Math.PI / 2);
+      badge.position.set(0, 2.0, -2.2);
+      kartGroup.add(badge);
+    } 
+    else if (kartId === 'blue_lightning') {
+      // Sky Brightening sci-fi: Dual power capacitor side canisters & central dynamic scanner array
+      const cyanGlowMat = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+      const thrusterMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.85, roughness: 0.25 });
+      
+      const capL = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 1.3, 12), thrusterMat);
+      capL.rotateX(Math.PI / 2);
+      capL.position.set(-1.35, 0.58, -0.6);
+      
+      const glowRingL = new THREE.Mesh(new THREE.TorusGeometry(0.35, 0.05, 8, 12), cyanGlowMat);
+      glowRingL.position.set(0, 0, 0.55);
+      capL.add(glowRingL);
+
+      const capR = capL.clone();
+      capR.position.x = 1.35;
+      kartGroup.add(capL, capR);
+
+      // Dynamic central radar scanner pylon
+      const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.15, 6), thrusterMat);
+      ant.position.set(0, 1.4, 0.35);
+      const antGlow = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), cyanGlowMat);
+      antGlow.position.y = 0.65;
+      ant.add(antGlow);
+      kartGroup.add(ant);
+    } 
+    else if (kartId === 'golden_hero') {
+      // Brave Caliber: Knightly front-angled bumper shields, pegasus winglets, & golden sword-fin deck
+      const goldMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.95, roughness: 0.05 });
+      const shieldL = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.6, 0.25), goldMat);
+      shieldL.rotation.y = Math.PI / 4;
+      shieldL.position.set(-0.6, 0.5, 2.6);
+      
+      const shieldR = shieldL.clone();
+      shieldR.rotation.y = -Math.PI / 4;
+      shieldR.position.x = 0.6;
+      kartGroup.add(shieldL, shieldR);
+
+      // Knight sword crest fin on the nose
+      const crestFin = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.6, 0.85), goldMat);
+      crestFin.position.set(0, 0.8, 2.1);
+      kartGroup.add(crestFin);
+
+      // High-swept pegasus wing-spikes on spoiler tips
+      const wingLetL = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.25, 0.8), goldMat);
+      wingLetL.rotation.z = Math.PI / 6;
+      wingLetL.position.set(-1.8, 1.85, -2.2);
+      const wingLetR = wingLetL.clone();
+      wingLetR.rotation.z = -Math.PI / 6;
+      wingLetR.position.x = 1.8;
+      kartGroup.add(wingLetL, wingLetR);
+
+      // Brave luminous crown gem center headlight
+      const headlight = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), new THREE.MeshBasicMaterial({ color: 0xfef08a }));
+      headlight.position.set(0, 0.45, 2.85);
+      kartGroup.add(headlight);
+    } 
+    else if (kartId === 'shadow_knight') {
+      // Shadow crawler: Wide ground drag skirts, angular side stabilizer boards, & violet dual exhausts
+      const stealthMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.9, roughness: 0.5 });
+      const dragSkirtL = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.15, 3.2), stealthMat);
+      dragSkirtL.position.set(-1.3, 0.35, 0);
+      const dragSkirtR = dragSkirtL.clone();
+      dragSkirtR.position.x = 1.3;
+      kartGroup.add(dragSkirtL, dragSkirtR);
+
+      // High angular stabilizer panels
+      const stabL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.8, 1.1), stealthMat);
+      stabL.rotation.z = Math.PI / 8;
+      stabL.position.set(-1.5, 0.8, -1.3);
+      const stabR = stabL.clone();
+      stabR.rotation.z = -Math.PI / 8;
+      stabR.position.x = 1.5;
+      kartGroup.add(stabL, stabR);
+
+      // Deep purple exhaust rods with hot-glow cores
+      const purpleGlow = new THREE.MeshBasicMaterial({ color: 0x8b5cf6 });
+      const exhaustPipeL = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.7, 8), stealthMat);
+      exhaustPipeL.position.set(-0.35, 0.6, -2.1);
+      exhaustPipeL.rotateX(Math.PI / 3);
+      const glowTipL = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.08, 8), purpleGlow);
+      glowTipL.position.y = 0.36;
+      exhaustPipeL.add(glowTipL);
+
+      const exhaustPipeR = exhaustPipeL.clone();
+      exhaustPipeR.position.x = 0.35;
+      kartGroup.add(exhaustPipeL, exhaustPipeR);
+    } 
+    else if (kartId === 'neon_dragon') {
+      // Dragon dynamic Ferrari: High-profile neon green intake vents, scaled ridge cones, & glowing terminal tips
+      const purpleMat = new THREE.MeshStandardMaterial({ color: 0xa855f7, metalness: 0.9, roughness: 0.12 });
+      const greenGlow = new THREE.MeshBasicMaterial({ color: 0x22c55e });
+
+      // Left & right aggressive air intake pods
+      const scoopL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.5, 1.3), purpleMat);
+      scoopL.position.set(-1.3, 0.6, 0.2);
+      scoopL.rotation.y = 0.1;
+      const glowStripeL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.35, 1.1), greenGlow);
+      glowStripeL.position.set(-0.21, 0, 0);
+      scoopL.add(glowStripeL);
+
+      const scoopR = scoopL.clone();
+      scoopR.position.x = 1.3;
+      scoopR.rotation.y = -0.1;
+      scoopR.children[0].position.x = 0.21;
+      kartGroup.add(scoopL, scoopR);
+
+      // Dragon spine scale fin on top of body (2 scaled cones)
+      const spineCone1 = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.5, 4), purpleMat);
+      spineCone1.position.set(0, 1.1, 0.3);
+      spineCone1.rotation.y = Math.PI / 4;
+      const spineCone2 = spineCone1.clone();
+      spineCone2.position.set(0, 1.1, -0.6);
+      kartGroup.add(spineCone1, spineCone2);
+
+      // Huge spoiler green tips edge borders
+      const spoilerEndL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.7, 1.1), greenGlow);
+      spoilerEndL.position.set(-1.6, 1.85, -2.2);
+      const spoilerEndR = spoilerEndL.clone();
+      spoilerEndR.position.x = 1.6;
+      kartGroup.add(spoilerEndL, spoilerEndR);
+    } 
+    else if (kartId === 'crimson_vortex') {
+      // Titan heavy vortex jet: Large round engine pods, wide wings, and triple booster nozzle assembly
+      const fuchsiaMat = new THREE.MeshStandardMaterial({ color: 0xd946ef, metalness: 0.9, roughness: 0.1 });
+      const redGlow = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+      const titanSteel = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+
+      // Left & right colossal turbines on sides of seat
+      const turbineL = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.6, 12), titanSteel);
+      turbineL.rotateX(Math.PI / 2);
+      turbineL.position.set(-1.3, 0.8, -0.7);
+      
+      const fireRingL = new THREE.Mesh(new THREE.TorusGeometry(0.44, 0.06, 8, 12), redGlow);
+      fireRingL.position.set(0, 0, 0.8);
+      turbineL.add(fireRingL);
+
+      const turbineR = turbineL.clone();
+      turbineR.position.x = 1.3;
+      kartGroup.add(turbineL, turbineR);
+
+      // Splinter aerodynamic teeth on sides
+      const edgeSplitterL = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.15, 1.25), fuchsiaMat);
+      edgeSplitterL.position.set(-1.4, 0.38, 1.8);
+      edgeSplitterL.rotation.y = 0.2;
+      const edgeSplitterR = edgeSplitterL.clone();
+      edgeSplitterR.position.x = 1.4;
+      edgeSplitterR.rotation.y = -0.2;
+      kartGroup.add(edgeSplitterL, edgeSplitterR);
+
+      // Dual extreme sub-nozzles flanking main engine core
+      const ex1 = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.22, 0.6, 8), titanSteel);
+      ex1.rotateX(Math.PI / 2);
+      ex1.position.set(-0.45, 0.55, -2.2);
+      const exGlow1 = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 8), redGlow);
+      exGlow1.position.y = 0.32;
+      ex1.add(exGlow1);
+
+      const ex2 = ex1.clone();
+      ex2.position.x = 0.45;
+      kartGroup.add(ex1, ex2);
+    } 
+    else if (kartId === 'obsidian_shadow') {
+      // Obsidian legendary: Poly crystal armor plating, golden forward energy rod pylons, & reactor energy core
+      const obsidianMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.95, roughness: 0.1 });
+      const goldGlowMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+
+      // Diamond-cut crystalline center nose canopy
+      const crystalDeck = new THREE.Mesh(new THREE.OctahedronGeometry(0.55), obsidianMat);
+      crystalDeck.scale.set(1.4, 0.5, 1.8);
+      crystalDeck.position.set(0, 0.8, 1.1);
+      kartGroup.add(crystalDeck);
+
+      // Gold energy conductor rods on front boundaries
+      const rodsL = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 1.9, 8), obsidianMat);
+      rodsL.rotateX(Math.PI / 2);
+      rodsL.position.set(-1.25, 0.48, 1.1);
+      const brightTipL = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), goldGlowMat);
+      brightTipL.position.y = 0.95;
+      rodsL.add(brightTipL);
+
+      const rodsR = rodsL.clone();
+      rodsR.position.x = 1.25;
+      kartGroup.add(rodsL, rodsR);
+
+      // Back Ring nuclear fusion reactor gate
+      const centerCoreGate = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.08, 8, 16), goldGlowMat);
+      centerCoreGate.position.set(0, 1.0, -1.9);
+      kartGroup.add(centerCoreGate);
+    } 
+    else if (kartId === 'emperor_absolute') {
+      // Emperor legendary space cruiser: Blade forks, cyan quantum reactor core, and double-decker hyper-spoiler
+      const emperorGold = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.95, roughness: 0.05 });
+      const cyanGlow = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+      const slateBody = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 });
+
+      // Star-blades on bumper
+      const forkL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 1.6), emperorGold);
+      forkL.rotation.y = 0.3;
+      forkL.position.set(-1.3, 0.35, 2.5);
+      const forkR = forkL.clone();
+      forkR.rotation.y = -0.3;
+      forkR.position.x = 1.3;
+      kartGroup.add(forkL, forkR);
+
+      // Quantum reactor core back globe
+      const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.55, 12, 12), cyanGlow);
+      coreSphere.position.set(0, 0.95, -1.3);
+      
+      const coreSatRing = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.06, 6, 16), emperorGold);
+      coreSatRing.rotation.x = Math.PI / 4;
+      coreSphere.add(coreSatRing);
+      kartGroup.add(coreSphere);
+
+      // Sovereign Double-Deck Spoiler setup
+      const starWingUpper = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.25, 1.15), emperorGold);
+      starWingUpper.position.set(0, 2.4, -2.3);
+      const starSupL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.8, 0.18), slateBody);
+      starSupL.position.set(-1.2, 2.05, -2.25);
+      const starSupR = starSupL.clone();
+      starSupR.position.x = 1.2;
+      kartGroup.add(starWingUpper, starSupL, starSupR);
+    }
+    else if (kartId === 'outrage_supreme_dev') {
+      // Creator-level Outrage Supreme Developer Ride: Red hot metal accents, hyper matrix cyber-spoilers, and mint-green plasma cores
+      const rubyMat = new THREE.MeshStandardMaterial({ color: 0xff0055, metalness: 0.98, roughness: 0.05 });
+      const mintGlow = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
+      const darkPlate = new THREE.MeshStandardMaterial({ color: 0x090d16, metalness: 0.92, roughness: 0.08 });
+
+      // Ultra-sharp front splitter wings
+      const sharpWingL = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.08, 1.4), rubyMat);
+      sharpWingL.rotation.set(0.1, 0.4, 0.05);
+      sharpWingL.position.set(-1.4, 0.3, 2.7);
+      const sharpWingR = sharpWingL.clone();
+      sharpWingR.rotation.y = -0.4;
+      sharpWingR.position.x = 1.4;
+      kartGroup.add(sharpWingL, sharpWingR);
+
+      // Dual thrust nozzles back glowing in Mint Green
+      const nozzleL = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.25, 0.9, 12), darkPlate);
+      nozzleL.rotation.x = Math.PI / 2;
+      nozzleL.position.set(-0.55, 0.6, -2.15);
+      const nozzleGlowL = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.1, 8), mintGlow);
+      nozzleGlowL.rotation.x = Math.PI / 2;
+      nozzleGlowL.position.set(-0.55, 0.6, -2.62);
+
+      const nozzleR = nozzleL.clone();
+      nozzleR.position.x = 0.55;
+      const nozzleGlowR = nozzleGlowL.clone();
+      nozzleGlowR.position.x = 0.55;
+
+      kartGroup.add(nozzleL, nozzleGlowL, nozzleR, nozzleGlowR);
+
+      // Huge holographic Matrix Wing
+      const holographicWing = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.18, 1.25), rubyMat);
+      holographicWing.position.set(0, 2.6, -2.4);
+      const holographicSill = new THREE.Mesh(new THREE.BoxGeometry(3.7, 0.06, 1.0), mintGlow);
+      holographicSill.position.set(0, 2.69, -2.4);
+      
+      const wingStalkL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.0, 0.35), darkPlate);
+      wingStalkL.rotation.x = -0.2;
+      wingStalkL.position.set(-1.3, 2.1, -2.35);
+      const wingStalkR = wingStalkL.clone();
+      wingStalkR.position.x = 1.3;
+
+      kartGroup.add(holographicWing, holographicSill, wingStalkL, wingStalkR);
+    }
+
+    // Wheels - Polished tires with chrome metallic alloy rims
     const wheelGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.6, 12);
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.8 });
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7 });
     wheelGeo.rotateZ(Math.PI / 2);
+
+    const rimGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.62, 8);
+    rimGeo.rotateZ(Math.PI / 2);
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.95, roughness: 0.08 });
 
     const wheels: THREE.Mesh[] = [];
     const wheelPositions = [
@@ -1177,6 +1939,11 @@ export class GameEngine {
     wheelPositions.forEach(pos => {
       const w = new THREE.Mesh(wheelGeo, wheelMat);
       w.position.set(pos[0], pos[1], pos[2]);
+      
+      // Dynamic alloy rim insert
+      const rim = new THREE.Mesh(rimGeo, rimMat);
+      w.add(rim);
+      
       kartGroup.add(w);
       wheels.push(w);
     });
@@ -1324,8 +2091,7 @@ export class GameEngine {
 
         const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), boxMat);
         const spawnPos = point.clone().addScaledVector(lateralDir, offset);
-        boxMesh.position.copy(spawnPos);
-        boxMesh.position.y += 2.0;
+        boxMesh.position.set(spawnPos.x, spawnPos.y * 0.01 + 2.0, spawnPos.z);
 
         this.scene.add(boxMesh);
         this.itemBoxes.push({
@@ -1365,8 +2131,7 @@ export class GameEngine {
 
         const coinMesh = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.16, 8, 16), coinMat);
         const spawnPos = point.clone().addScaledVector(lateralDir, offset);
-        coinMesh.position.copy(spawnPos);
-        coinMesh.position.y += 1.4;
+        coinMesh.position.set(spawnPos.x, spawnPos.y * 0.01 + 1.4, spawnPos.z);
 
         this.scene.add(coinMesh);
         this.coins.push({
@@ -1535,6 +2300,8 @@ export class GameEngine {
     this.aiLap = 1;
     this.aiLapCheckpoints = [false, false];
     this.aiProgress = 0;
+    this.aiFinishedTimeRemaining = null;
+    this.aiFinishedTime = null;
 
     // Clear Splatoon paints
     this.paints.forEach(paint => {
@@ -1567,12 +2334,19 @@ export class GameEngine {
       this.spawnStraightLineObstacles();
     }
 
+    // Reset jump/vertical parameters
+    this.verticalVelocity = 0;
+    this.verticalOffset = 0;
+    this.aiVerticalVelocity = 0;
+    this.aiVerticalOffset = 0;
+
     const startPoint = this.trackSpline.getPointAt(0);
     const startDir = this.trackSpline.getTangentAt(0).normalize();
 
     this.playerKart.mesh.position.copy(startPoint);
     const sideOffset = startDir.clone().cross(new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(-3);
     this.playerKart.mesh.position.add(sideOffset);
+    this.playerKart.mesh.position.y = startPoint.y * 0.01;
 
     this.angle = Math.atan2(startDir.x, startDir.z);
     this.playerKart.mesh.rotation.y = this.angle;
@@ -1580,6 +2354,7 @@ export class GameEngine {
     this.aiKart.mesh.position.copy(startPoint);
     const aiSideOffset = startDir.clone().cross(new THREE.Vector3(0, 1, 0)).normalize().multiplyScalar(3);
     this.aiKart.mesh.position.add(aiSideOffset);
+    this.aiKart.mesh.position.y = startPoint.y * 0.01;
     this.aiKart.mesh.rotation.y = this.angle;
 
     this.spawnItemBoxes();
@@ -1598,6 +2373,7 @@ export class GameEngine {
   useBooster() {
     this.boosterActive = true;
     this.boosterTimer = 180;
+    this.boostersUsed++;
     AudioEngine.playBoost();
   }
 
@@ -1867,6 +2643,152 @@ export class GameEngine {
     }
   }
 
+  shootPaintGun(owner: 'player' | 'ai') {
+    if (!this.active) return;
+    const headingAngle = owner === 'player' ? (this.angle + this.driftAngle) : (this.aiKart?.mesh?.rotation?.y || 0);
+    const forwardVec = new THREE.Vector3(Math.sin(headingAngle), 0, Math.cos(headingAngle)).normalize();
+    const bulletColor = owner === 'player' ? 0x22d3ee : 0xec4899;
+
+    const bullet = new THREE.Mesh(
+      new THREE.SphereGeometry(0.7, 8, 8),
+      new THREE.MeshBasicMaterial({ color: bulletColor })
+    );
+    const startPos = owner === 'player' ? this.playerKart.mesh.position.clone() : this.aiKart.mesh.position.clone();
+    bullet.position.copy(startPos);
+    bullet.position.y += 1.0;
+    this.scene.add(bullet);
+
+    let velocity = forwardVec.clone().multiplyScalar(3.8);
+    velocity.y = 0.45;
+    let age = 0;
+
+    const bulletInterval = setInterval(() => {
+      if (!this.active) {
+        clearInterval(bulletInterval);
+        try { this.scene.remove(bullet); } catch (e) {}
+        return;
+      }
+      bullet.position.add(velocity);
+      velocity.y -= 0.04;
+      this.createSmokeParticle(bullet.position, bulletColor, 0.25);
+
+      age++;
+      const isHitGround = bullet.position.y <= 0.2;
+      const isExpired = age > 25;
+
+      if (isHitGround || isExpired) {
+        clearInterval(bulletInterval);
+        try { this.scene.remove(bullet); } catch (e) {}
+
+        const impactPos = bullet.position.clone();
+        impactPos.y = 0.01;
+        
+        this.spawnPaintSpot(impactPos, owner);
+        for (let i = 0; i < 3; i++) {
+          const rOffset = new THREE.Vector3(
+            (Math.random() - 0.5) * 3.5,
+            0,
+            (Math.random() - 0.5) * 3.5
+          );
+          this.spawnPaintSpot(impactPos.clone().add(rOffset), owner);
+        }
+
+        const opponentKart = owner === 'player' ? this.aiKart : { mesh: this.playerKart.mesh };
+        if (opponentKart && opponentKart.mesh) {
+          const dist = impactPos.distanceTo(opponentKart.mesh.position);
+          if (dist < 4.8) {
+            this.onComicPopup?.('SPLAT!', '#eab308');
+            if (owner === 'player') {
+              this.triggerAICrash();
+              this.onHUDNotification?.('물감 명중!', '상대에게 페인트 탄환을 명중시켰습니다!');
+            } else {
+              this.speed *= 0.45;
+              this.onHUDNotification?.('상대 물총 피격!', '상대의 페인트 탄환을 맞아 주행 시야가 일시 방해되고 감속되었습니다!');
+            }
+          }
+        }
+      }
+    }, 30);
+  }
+
+  throwPaintBomb(owner: 'player' | 'ai') {
+    if (!this.active) return;
+    const headingAngle = owner === 'player' ? (this.angle + this.driftAngle) : (this.aiKart?.mesh?.rotation?.y || 0);
+    const forwardVec = new THREE.Vector3(Math.sin(headingAngle), 0, Math.cos(headingAngle)).normalize();
+    const bulletColor = owner === 'player' ? 0x22d3ee : 0xec4899;
+
+    const bomb = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(1.2, 1),
+      new THREE.MeshStandardMaterial({
+        color: bulletColor,
+        roughness: 0.25,
+        metalness: 0.3,
+        emissive: bulletColor,
+        emissiveIntensity: 0.2
+      })
+    );
+    const startPos = owner === 'player' ? this.playerKart.mesh.position.clone() : this.aiKart.mesh.position.clone();
+    bomb.position.copy(startPos);
+    bomb.position.y += 1.4;
+    this.scene.add(bomb);
+
+    let velocity = forwardVec.clone().multiplyScalar(2.1);
+    velocity.y = 0.94;
+    let age = 0;
+
+    const bombInterval = setInterval(() => {
+      if (!this.active) {
+        clearInterval(bombInterval);
+        try { this.scene.remove(bomb); } catch (e) {}
+        return;
+      }
+      bomb.position.add(velocity);
+      velocity.y -= 0.048;
+      bomb.rotation.x += 0.08;
+      bomb.rotation.y += 0.04;
+      this.createSmokeParticle(bomb.position, bulletColor, 0.45);
+
+      age++;
+      const isHitGround = bomb.position.y <= 0.3;
+      if (isHitGround || age > 40) {
+        clearInterval(bombInterval);
+        try { this.scene.remove(bomb); } catch (e) {}
+
+        const impactPos = bomb.position.clone();
+        impactPos.y = 0.01;
+
+        this.spawnPaintSpot(impactPos, owner);
+        for (let i = 0; i < 9; i++) {
+          const subAngle = (i / 9) * Math.PI * 2;
+          const radius = 3.0 + Math.random() * 4.5;
+          const rOffset = new THREE.Vector3(
+            Math.cos(subAngle) * radius,
+            0,
+            Math.sin(subAngle) * radius
+          );
+          this.spawnPaintSpot(impactPos.clone().add(rOffset), owner);
+        }
+
+        const opponentKart = owner === 'player' ? this.aiKart : { mesh: this.playerKart.mesh };
+        if (opponentKart && opponentKart.mesh) {
+          const dist = impactPos.distanceTo(opponentKart.mesh.position);
+          if (dist < 11.0) {
+            this.onComicPopup?.('SPLAT SPLASH!', '#ef4444');
+            if (owner === 'player') {
+              this.triggerAICrash();
+              this.onHUDNotification?.('물감 폭탄 클린 직격!', '대형 물감 폭탄의 대폭발에 상대를 휘말리게 했습니다!');
+            } else {
+              AudioEngine.playCrash();
+              this.playerKart.mesh.userData.spinTimer = 60;
+              this.speed *= 0.15;
+              this.onHUDNotification?.('물감 대폭탄 폭발!', '상대가 던진 대량 페인트 물감폭탄이 활주로에서 작열했습니다!');
+            }
+          }
+        }
+      }
+    }, 30);
+  }
+
   spawnFlagRandomly() {
     if (this.flagMesh) {
       this.scene.remove(this.flagMesh);
@@ -1970,8 +2892,8 @@ export class GameEngine {
             emissiveIntensity: 0.4
           });
           obstacleMesh = new THREE.Mesh(geo, mat);
-          obstacleMesh.position.copy(point).addScaledVector(lateralDir, offset);
-          obstacleMesh.position.y += 1.25;
+          const spawnPos1 = point.clone().addScaledVector(lateralDir, offset);
+          obstacleMesh.position.set(spawnPos1.x, spawnPos1.y * 0.01 + 1.25, spawnPos1.z);
         } else {
           const geo = new THREE.BoxGeometry(2.2, 2.2, 2.2);
           const mat = new THREE.MeshStandardMaterial({
@@ -1982,8 +2904,8 @@ export class GameEngine {
             emissiveIntensity: 0.45
           });
           obstacleMesh = new THREE.Mesh(geo, mat);
-          obstacleMesh.position.copy(point).addScaledVector(lateralDir, offset);
-          obstacleMesh.position.y += 1.1;
+          const spawnPos2 = point.clone().addScaledVector(lateralDir, offset);
+          obstacleMesh.position.set(spawnPos2.x, spawnPos2.y * 0.01 + 1.1, spawnPos2.z);
         }
 
         this.scene.add(obstacleMesh);
@@ -2052,7 +2974,28 @@ export class GameEngine {
   update(keys: Record<string, any>, driftStatsWeight = 1.8) {
     if (!this.active) return;
 
+    if (this.gameMode === 'relay_race' && this.aiKart && this.aiKart.mesh) {
+      this.aiKart.mesh.visible = false;
+    }
+
     this.timer += 16.67;
+
+    if (this.aiFinishedTimeRemaining !== null) {
+      const prevSec = Math.ceil(this.aiFinishedTimeRemaining);
+      this.aiFinishedTimeRemaining -= 0.01667;
+      const currSec = Math.ceil(this.aiFinishedTimeRemaining);
+      
+      if (currSec < prevSec && currSec > 0) {
+        this.onComicPopup?.(`${currSec}초!`, '#f43f5e');
+        this.onHUDNotification?.('⚠️ 남은 시간', `라이벌이 이미 골인했습니다! 완주까지 남은 시간: ${currSec}초`);
+      }
+      
+      if (this.aiFinishedTimeRemaining <= 0) {
+        this.aiFinishedTimeRemaining = null;
+        this.onGameFinished(false, this.timer);
+        return;
+      }
+    }
 
     // Rotate overhead markers for supreme 3D positioning visibility
     if (this.playerKart && this.playerKart.mesh) {
@@ -2079,6 +3022,13 @@ export class GameEngine {
 
     // A. Player Limits
     let currentLimit = this.maxSpeed;
+    let currentAccel = this.accel;
+
+    if (this.gameMode === 'paint_turf' && keys.isMobile) {
+      currentLimit = this.maxSpeed * 0.55;
+      currentAccel = this.accel * 0.65;
+    }
+
     if (this.boosterActive) {
       // Increased boost speed in Super Nitro for explosive sensation! Normal boost is 1.28
       currentLimit = this.maxSpeed * (this.isSuperNitro ? 1.48 : 1.28);
@@ -2107,21 +3057,30 @@ export class GameEngine {
     }
 
     // B. Drive Inputs
-    const forward = keys.ArrowUp || keys.w || keys.W;
-    const backward = keys.ArrowDown || keys.s || keys.S;
-    const left = keys.ArrowLeft || keys.a || keys.A;
-    const right = keys.ArrowRight || keys.d || keys.D;
-    const driftKey = keys.Shift;
+    let forward = keys.ArrowUp || keys.w || keys.W;
+    let backward = keys.ArrowDown || keys.s || keys.S;
+    let left = keys.ArrowLeft || keys.a || keys.A;
+    let right = keys.ArrowRight || keys.d || keys.D;
+    let driftKey = keys.Shift;
+
+    if (!this.isActiveRunner()) {
+      forward = false;
+      backward = false;
+      left = false;
+      right = false;
+      driftKey = false;
+      this.speed = 0;
+    }
 
     // Track shift tap state for snappy chain transitions
     const driftKeyJustPressed = driftKey && !this.lastDriftKey;
     this.lastDriftKey = !!driftKey;
 
     if (forward) {
-      this.speed += this.accel;
+      this.speed += currentAccel;
       if (this.speed > currentLimit) this.speed = currentLimit;
     } else if (backward) {
-      this.speed -= this.accel;
+      this.speed -= currentAccel;
       if (this.speed < -0.3) this.speed = -0.3;
     } else {
       this.speed *= this.friction;
@@ -2167,6 +3126,7 @@ export class GameEngine {
     if (canStartDrift || canSustainDrift) {
       if (!this.isDrifting) {
         this.isDrifting = true;
+        this.driftCount++;
         this.driftDirection = angleDiff > 0 ? 1 : -1;
         AudioEngine.playDrift();
       }
@@ -2267,9 +3227,57 @@ export class GameEngine {
       this.playerKart.mesh.position.z += vz;
     }
 
+    // Let's check our custom seasonal track elements!
+    const playerPos = this.playerKart.mesh.position;
+
+    // 1. Gravity and Vertical Jump mechanics
+    this.verticalVelocity -= 0.16; // gravity
+    this.verticalOffset += this.verticalVelocity;
+    if (this.verticalOffset <= 0) {
+      this.verticalOffset = 0;
+      this.verticalVelocity = 0;
+    }
+
+    // Same for AI kart
+    if (this.aiKart && this.aiKart.mesh) {
+      this.aiVerticalVelocity -= 0.16;
+      this.aiVerticalOffset += this.aiVerticalVelocity;
+      if (this.aiVerticalOffset <= 0) {
+        this.aiVerticalOffset = 0;
+        this.aiVerticalVelocity = 0;
+      }
+    }
+
+    // 2. Booster Pad collisions disabled per user request: "부스트 패달이나 점핑트랩을 없애줘."
+    // 3. Jump Ramp collisions disabled per user request: "부스트 패달이나 점핑트랩을 없애줘."
+
+    // 4. Shortcut check (to adapt road width to prevent border wall pushing back)
+    let maxRoadRadius = 21.5;
+    let isInShortcut = false;
+    if (this.mapInfo && this.mapInfo.shortcuts) {
+      this.mapInfo.shortcuts.forEach(sc => {
+        const scPos = new THREE.Vector3(sc[0] * 1.75, sc[1] * 1.75 * 0.01, sc[2] * 1.75);
+        if (playerPos.distanceTo(scPos) < 32.0) {
+          isInShortcut = true;
+        }
+      });
+    }
+    if (isInShortcut) {
+      maxRoadRadius = 45.0; // expand acceptable track width
+      if (Math.random() < 0.02) {
+        this.onComicPopup?.('SHORTCUT ONLINE!', '#f97316');
+      }
+    }
+
     // Outer wall check
     const nearestT = this.getNearestTrackSplinePoint(this.playerKart.mesh.position);
-    this.playerKart.mesh.position.y = 0;
+    let centerPt = new THREE.Vector3(0, 0, 0);
+    if (this.mapInfo && this.mapInfo.id !== 'empty_arena') {
+      centerPt = this.trackSpline.getPointAt(nearestT);
+      this.playerKart.mesh.position.y = centerPt.y * 0.01 + this.verticalOffset;
+    } else {
+      this.playerKart.mesh.position.y = this.verticalOffset;
+    }
 
     if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
       const distFromCenter = this.playerKart.mesh.position.length();
@@ -2277,9 +3285,10 @@ export class GameEngine {
       if (distFromCenter > maxArenaRadius) {
         const pushDir = this.playerKart.mesh.position.clone().normalize();
         pushDir.y = 0;
-        
+
         // Push slightly inside to prevent sticking
         this.playerKart.mesh.position.copy(pushDir).multiplyScalar(maxArenaRadius - 0.6);
+        this.playerKart.mesh.position.y = this.verticalOffset;
 
         if (Math.abs(this.speed) > 0.15) {
           this.speed *= 0.88; // Custom slide friction instead of abrupt rotating
@@ -2296,9 +3305,8 @@ export class GameEngine {
         }
       }
     } else {
-      const centerPt = this.trackSpline.getPointAt(nearestT);
-      const dist = this.playerKart.mesh.position.distanceTo(centerPt);
-      const maxRoadRadius = 21.5;
+      // 2D distance to center of road
+      const dist = new THREE.Vector2(playerPos.x, playerPos.z).distanceTo(new THREE.Vector2(centerPt.x, centerPt.z));
 
       if (dist > maxRoadRadius) {
         const pushDir = new THREE.Vector3().subVectors(this.playerKart.mesh.position, centerPt);
@@ -2307,6 +3315,7 @@ export class GameEngine {
 
         // Push slightly inside the road boundary to prevent sticking
         this.playerKart.mesh.position.copy(centerPt).add(pushDir.multiplyScalar(maxRoadRadius - 0.6));
+        this.playerKart.mesh.position.y = centerPt.y * 0.01 + this.verticalOffset;
 
         if (Math.abs(this.speed) > 0.15) {
           this.speed *= 0.88; // Custom slide friction instead of abrupt rotating
@@ -2325,7 +3334,9 @@ export class GameEngine {
     }
 
     // Speed callback
-    this.onSpeedChange(Math.floor((Math.abs(this.speed) / this.maxSpeed) * 210));
+    const currentSpeedVal = Math.floor((Math.abs(this.speed) / this.maxSpeed) * 210);
+    this.maxSpeedReached = Math.max(this.maxSpeedReached || 0, currentSpeedVal);
+    this.onSpeedChange(currentSpeedVal);
 
     this.updateAIRacer();
     this.checkCollisions();
@@ -2337,6 +3348,21 @@ export class GameEngine {
         this.spawnPaintSpot(this.playerKart.mesh.position, 'player');
         if (this.aiKart && this.aiKart.mesh) {
           this.spawnPaintSpot(this.aiKart.mesh.position, 'ai');
+        }
+      }
+
+      // AI shooting automated mechanism to make it highly dynamic & fun
+      if (this.aiKart && this.aiKart.mesh) {
+        const distToPlayer = this.aiKart.mesh.position.distanceTo(this.playerKart.mesh.position);
+        if (distToPlayer < 50.0) {
+          // AI fires paint bullets every 1.8 seconds (108 ticks) if close
+          if (this.paintTimer % 108 === 0) {
+            this.shootPaintGun('ai');
+          }
+          // AI throws a massive paint bomb every 7.5 seconds (450 ticks)
+          if (this.paintTimer % 450 === 0) {
+            this.throwPaintBomb('ai');
+          }
         }
       }
     }
@@ -2392,8 +3418,7 @@ export class GameEngine {
       const currentPos = this.aiKart.mesh.position.clone();
       const targetPos = this.trackSpline.getPointAt(splineProgress);
 
-      this.aiKart.mesh.position.lerp(targetPos, 0.25);
-      this.aiKart.mesh.position.y = 0.22; // float slightly above ground like a hover phantom!
+      this.aiKart.mesh.position.lerp(new THREE.Vector3(targetPos.x, targetPos.y * 0.01 + 0.22, targetPos.z), 0.25);
 
       const lookAngle = Math.atan2(targetPos.x - currentPos.x, targetPos.z - currentPos.z);
       let angleDiff = lookAngle - this.aiKart.mesh.rotation.y;
@@ -2552,7 +3577,13 @@ export class GameEngine {
 
     // Smoothly interpolate positions
     this.aiKart.mesh.position.lerp(targetPos, 0.22);
-    this.aiKart.mesh.position.y = 0;
+    if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
+      this.aiKart.mesh.position.y = this.aiVerticalOffset;
+    } else {
+      const nearestAIT = this.getNearestTrackSplinePoint(this.aiKart.mesh.position);
+      const roadSplinePt = this.trackSpline.getPointAt(nearestAIT);
+      this.aiKart.mesh.position.y = roadSplinePt.y * 0.01 + this.aiVerticalOffset;
+    }
 
     // Smooth pointing rotation angles (no robotic sudden snapping)
     const lookAngle = Math.atan2(targetPos.x - currentPos.x, targetPos.z - currentPos.z);
@@ -2587,7 +3618,7 @@ export class GameEngine {
       if (!kart) {
         // Create new mesh representing this participant!
         const pKartInfo = KARTS.find(k => k.id === p.kartId) || KARTS[0];
-        kart = this.createKart(pKartInfo.color, pKartInfo.flameColor, false);
+        kart = this.createKart(pKartInfo.color, pKartInfo.flameColor, false, undefined, p.kartId);
         
         // Give a distinct cyan/blue indicator marker above friends/allies
         const overheadMarker = kart.mesh.getObjectByName("overhead_marker") as THREE.Mesh;
@@ -2652,6 +3683,7 @@ export class GameEngine {
         box.active = false;
         box.mesh.visible = false;
         box.respawnTimer = 300;
+        this.itemBoxesCollected++;
         this.onItemPickup();
       }
 
@@ -2749,7 +3781,7 @@ export class GameEngine {
     }
 
     if (this.gameMode === 'obstacle_dash') {
-      if (nearestT > 0.95 && this.active) {
+      if (nearestT > 0.99 && this.active) {
         const playerWon = (this.aiKart && this.aiKart.mesh) 
           ? (this.playerKart.mesh.position.z < this.aiKart.mesh.position.z) 
           : true;
@@ -2766,13 +3798,18 @@ export class GameEngine {
     if (aiT > 0.8 && aiT < 0.9) {
       this.aiLapCheckpoints[1] = true;
     }
-    if (aiT > 0.96 && this.aiLapCheckpoints[0] && this.aiLapCheckpoints[1]) {
+    if (aiT > 0.99 && this.aiLapCheckpoints[0] && this.aiLapCheckpoints[1]) {
       this.aiLapCheckpoints = [false, false];
       this.aiLap++;
 
       if (this.aiLap > this.maxLaps && this.active) {
-        // AI crossed finish line first!
-        this.onGameFinished(false, this.timer);
+        // AI crossed finish line first! Trigger 10 second countdown grace period
+        if (this.aiFinishedTimeRemaining === null) {
+          this.aiFinishedTimeRemaining = 10.0;
+          this.aiFinishedTime = this.timer;
+          this.onHUDNotification?.('⚠️ 라이벌 완주!', '상대 카트가 먼저 피니시 라인을 통과했습니다! 10초 내에 완주를 마쳐야 주행이 인정됩니다!');
+          this.onComicPopup?.('RIVAL FINISHED!', '#ef4444');
+        }
         return;
       }
     }
@@ -2785,12 +3822,12 @@ export class GameEngine {
     }
 
     // Start-Fin line
-    if (nearestT > 0.96 && this.lapCheckpoints[0] && this.lapCheckpoints[1]) {
+    if (nearestT > 0.99 && this.lapCheckpoints[0] && this.lapCheckpoints[1]) {
       this.lapCheckpoints = [false, false];
       this.lap++;
 
       if (this.lap > this.maxLaps) {
-        const playerWon = (this.lap - 1 + nearestT) >= (this.aiLap - 1 + this.aiProgress);
+        const playerWon = (this.aiLap <= this.maxLaps && this.aiFinishedTimeRemaining === null);
         this.onGameFinished(playerWon, this.timer);
       } else {
         this.onLapChange(this.lap);
@@ -2804,7 +3841,7 @@ export class GameEngine {
   getNearestTrackSplinePoint(pos: THREE.Vector3) {
     let closestT = 0;
     let minDist = Infinity;
-    const samples = 120;
+    const samples = 240;
     for (let i = 0; i < samples; i++) {
       const t = i / samples;
       const pathPt = this.trackSpline.getPointAt(t);

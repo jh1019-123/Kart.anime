@@ -18,7 +18,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'blue_lightning',
-    name: '스카이 브라이트닝',
+    name: '크로스 윈드',
     color: 0x06b6d4, // Neon Cyan
     flameColor: 0xec4899, // Pink flame
     description: '최고 속도가 극대화되었으며, 미래형 전자기 충전 가속 엔진을 탑재했습니다.',
@@ -47,21 +47,6 @@ export const KARTS: KartInfo[] = [
     price: 180
   },
   {
-    id: 'shadow_knight',
-    name: '섀도우크롤러',
-    color: 0x475569, // Charcoal Slate
-    flameColor: 0x8b5cf6, // Violet flame
-    description: '지면 밀착 주행 능력이 뛰어나 드리프트 중 속도 손실이 극단적으로 적습니다.',
-    rarity: 'Rare',
-    stats: {
-      speed: 1.28,
-      accel: 0.021,
-      drift: 1.9,
-      handling: 0.038
-    },
-    price: 200
-  },
-  {
     id: 'neon_dragon',
     name: '네온 페라리',
     color: 0xa855f7, // Deep Purple
@@ -78,7 +63,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'crimson_vortex',
-    name: '티탄 레드 포스',
+    name: '플린트',
     color: 0xd946ef, // Soft Fuchsia
     flameColor: 0xef4444, // Red spark
     description: '공기역학 배기 시스템을 통해 강력한 드래그 부스터를 획득할 수 있는 고스펙 머신입니다.',
@@ -93,7 +78,7 @@ export const KARTS: KartInfo[] = [
   },
   {
     id: 'obsidian_shadow',
-    name: '다크 옵시디언 섀도우',
+    name: '다크 옵시디언',
     color: 0x1e293b, // Slate Slate
     flameColor: 0xfacc15, // Golden glow
     description: '심연급 고밀도 복합 외장을 두른 최첨단 기어. 극대형 토크 기어를 통해 고비율의 오버드라이브 속도를 유지합니다.',
@@ -120,52 +105,25 @@ export const KARTS: KartInfo[] = [
       handling: 0.046
     },
     price: 2200
+  },
+  {
+    id: 'outrage_supreme_dev',
+    name: '디 아웃레이지 얼티밋 디벨로퍼',
+    color: 0xff0055, // Ultimate Neon Pink/Red
+    flameColor: 0x00ffcc, // Cyan-Green electric spark
+    description: '상점에서 secret 코드를 입력하여 해금된 최고 존엄 개발자 전용 머신. 디 아웃레이지 시리즈를 아득히 초월하는 전설적인 마스터 기어.',
+    rarity: 'Legendary',
+    stats: {
+      speed: 1.95,
+      accel: 0.052,
+      drift: 3.2,
+      handling: 0.055
+    },
+    price: 99999
   }
 ];
 
 export const MAPS: MapInfo[] = [
-  {
-    id: 'empty_arena',
-    name: '콜로세움 원형 광장 (Colosseum Arena)',
-    description: '장애물 없이 넓게 펼쳐진 빈 원형 경기장 광장. 샌드박스 주행이나 플래그 사수전, 스플래툰 색칠 싸움에 최적화되어 있습니다.',
-    difficulty: '★☆☆',
-    themeColor: 'emerald-400',
-    skyColor: 0x041812, // Dark emerald atmosphere
-    points: [
-      [0, 0, 0],
-      [56, 0, 56],
-      [80, 0, 0],
-      [56, 0, -56],
-      [0, 0, -80],
-      [-56, 0, -56],
-      [-80, 0, 0],
-      [-56, 0, 56],
-      [0, 0, 0]
-    ]
-  },
-  {
-    id: 'straight_dash',
-    name: '장애물 직선 대시 (Straight Dash)',
-    description: '오로지 최고속 경쟁과 빽빽이 들어찬 위험천만한 장애물을 회피 장치로 헤쳐나가는 1선 왕복 없는 초대형 일자 대시 서킷.',
-    difficulty: '★★★',
-    themeColor: 'indigo-500',
-    skyColor: 0x0a0c20, // Neo space void
-    points: [
-      [0, 0, 0],
-      [0, 0, -80],
-      [0, 0, -160],
-      [0, 0, -240],
-      [0, 0, -320],
-      [0, 0, -400],
-      [0, 0, -480],
-      [0, 0, -560],
-      [0, 0, -640],
-      [0, 0, -720],
-      [0, 0, -800],
-      [0, 0, -880],
-      [0, 0, -960]
-    ]
-  },
   {
     id: 'neon_sky_way',
     name: '네온 스카이 웨이 (Neon Sky Way)',
@@ -192,7 +150,7 @@ export const MAPS: MapInfo[] = [
   {
     id: 'cyberspace_tunnel',
     name: '사이스페이스 터널 (Cyberspace Tunnel)',
-    description: '연속적인 지그재그 헤어핀과 일직선 광속 가속 구간이 어우러진 미래형 테크노 가상터널 맵.',
+    description: '연속적인 지그재그 헤어핀 and 일직선 광속 가속 구간이 어우러진 미래형 테크노 가상터널 맵.',
     difficulty: '어려움',
     themeColor: 'cyan-400',
     skyColor: 0x05131a, // Dark cyan gray
@@ -286,6 +244,157 @@ export const MAPS: MapInfo[] = [
       [-80, 0, -50],
       [-35, 0, -15],
       [-10, 0, 0]
+    ]
+  },
+  {
+    id: 'spring_cherry_road',
+    name: '봄날의 흩날리는 벚꽃길 (Blossom Spring Road)',
+    description: '분홍빛 벚꽃 잎이 흩날리는 낭만적인 봄의 연분홍 산악 트랙. 대형 점프 지대와 산수유 지름길이 조화를 이룹니다.',
+    difficulty: '★★★☆',
+    themeColor: 'pink-300',
+    skyColor: 0xfff0f6, // Blossom pink glow
+    points: [
+      [0, 0, 0],
+      [60, 0, 20],        // Slow flat curve (Flattened)
+      [110, 0, -10],     // Flat curve (Flattened)
+      [150, 0, -60],     // Flat hairpin (Flattened)
+      [190, 0, -110],    // High plateau (Flattened)
+      [240, 0, -140],    // Apex before jump (Flattened)
+      [300, 0, -100],    // Valley receiving jump (Flattened)
+      [350, 0, -40],      // Base of valley (Flattened)
+      [330, 0, 40],      // Deep lakeside dip (Flattened)
+      [270, 0, 100],    // Curving near lakeside (Flattened)
+      [190, 0, 150],     // Flat rise back (Flattened)
+      [110, 0, 120],      // Hairpin bypass (Flattened)
+      [50, 0, 90],        // S-curves (Flattened)
+      [-30, 0, 110],     // Steep shortcut entry (Flattened)
+      [-80, 0, 60],       // Low land returning (Flattened)
+      [-40, 0, 10],       // Final stretch alignment (Flattened)
+      [0, 0, 0]
+    ],
+    boosterPads: [
+      [90, 0, 2],
+      [220, 0, -135],
+      [210, 0, 135]
+    ],
+    jumpRamps: [
+      [240, 0, -140]
+    ],
+    shortcuts: [
+      [80, 0, 105]
+    ]
+  },
+  {
+    id: 'summer_coconut_coast',
+    name: '여름 빌리지 코코넛 해안 (Sunny Coconut Summer Coast)',
+    description: '뜨거운 태양과 에메랄드 해변이 펼쳐지는 시원한 여름 코스. 거대한 모래 언덕 계곡 꼭대기에서의 짜릿한 공중 가속과 비밀 지름길이 기다립니다.',
+    difficulty: '★★★★',
+    themeColor: 'cyan-450',
+    skyColor: 0xe0f2fe, // Bright ocean blue
+    points: [
+      [0, 0, 0],
+      [70, 0, -30],       // Seaside flat strait (Flattened)
+      [140, 0, -60],      // Beach dune climb (Flattened)
+      [210, 0, -90],     // High dune cliff (Flattened)
+      [280, 0, -140],    // Overlook jump point (Flattened)
+      [320, 0, -80],      // Sand beach lander (Flattened)
+      [380, 0, -20],     // Tropical reef sea-level dip (Flattened)
+      [340, 0, 60],     // Underwater glass tunnel (Flattened)
+      [280, 0, 130],    // Underwater tunnel deep apex (Flattened)
+      [200, 0, 160],     // Climbing out of water (Flattened)
+      [130, 0, 100],      // Scenic resort pier drive (Flattened)
+      [60, 0, 50],        // Curving hairpins (Flattened)
+      [-40, 0, 90],      // Village arch pass (Flattened)
+      [-110, 0, 40],     // Elevated cliffside slope (Flattened)
+      [-90, 0, -20],      // Plunge down to finish (Flattened)
+      [-30, 0, -10],      // Alignment lane (Flattened)
+      [0, 0, 0]
+    ],
+    boosterPads: [
+      [40, 0, -15],
+      [260, 0, -130],
+      [220, 0, 155]
+    ],
+    jumpRamps: [
+      [280, 0, -140]
+    ],
+    shortcuts: [
+      [165, 0, 130]
+    ]
+  },
+  {
+    id: 'autumn_maple_valley',
+    name: '가을빛 단풍나무 비밀 계곡 (Maple Leaf Autumn Canyon)',
+    description: '황금빛 단풍나무들이 가득한 신비로운 붉은 가을 골짜기 트랙. 골짜기를 완전히 스킵하는 붉은 단풍나무 줄기 지름길이 특징입니다.',
+    difficulty: '★★★★☆',
+    themeColor: 'orange-500',
+    skyColor: 0xfff7ed, // Soft sunset gold
+    points: [
+      [0, 0, 0],
+      [50, 0, 40],       // Cozy forest trail rise (Flattened)
+      [110, 0, 90],      // Cliff edge winding (Flattened)
+      [180, 0, 140],     // Rocky ridge climb (Flattened)
+      [250, 0, 110],     // Highest maple scenic overlook (Flattened)
+      [290, 0, 40],      // Deep leaf-strewn gorge bottom (Flattened)
+      [340, 0, -20],     // Curving riverbed path (Flattened)
+      [310, 0, -90],      // Misty marsh loop (Flattened)
+      [240, 0, -140],    // Winding marsh S-turns (Flattened)
+      [160, 0, -110],    // Rising through wooden suspension bridge (Flattened)
+      [90, 0, -150],     // High cliff bridge checkpoint (Flattened)
+      [20, 0, -110],      // Descending rock arches (Flattened)
+      [-60, 0, -140],     // Dark maple cavern curve (Flattened)
+      [-120, 0, -80],    // Hidden temple mossy climb (Flattened)
+      [-80, 0, -20],      // Stepping slopes (Flattened)
+      [-30, 0, -10],
+      [0, 0, 0]
+    ],
+    boosterPads: [
+      [30, 0, 25],
+      [230, 0, 115],
+      [180, 0, -120]
+    ],
+    jumpRamps: [
+      [250, 0, 110]
+    ],
+    shortcuts: [
+      [200, 0, -15]
+    ]
+  },
+  {
+    id: 'winter_snowhead_glacier',
+    name: '겨울 왕국 설화의 하얀 트랙 (Frozen Winter Spell S-Track)',
+    description: '투명하게 얼어붙은 푸른 빙벽과 영하 40도의 눈 폭풍을 뚫고 달리는 궁극의 겨울 코스. 고속 스카이 점프대와 균열 지름길을 마스터하세요.',
+    difficulty: '★★★★★',
+    themeColor: 'sky-400',
+    skyColor: 0xf0f9ff, // Pale frozen arctic blue
+    points: [
+      [0, 0, 0],
+      [-60, 0, -40],      // Heavy blizzard ascent (Flattened)
+      [-130, 0, -90],    // Ice-wall razor ridge (Flattened)
+      [-210, 0, -130],   // Ice cavern climb (Flattened)
+      [-280, 0, -80],    // Glacial peak apex & jump over crevice (Flattened)
+      [-240, 0, -10],    // Deep snow sink drop (Flattened)
+      [-310, 0, 50],    // Deepest frozen trench tunnel (Flattened)
+      [-260, 0, 120],   // Deepest coordinate point (Flattened)
+      [-180, 0, 160],   // Under-ice frozen lake crossing (Flattened)
+      [-100, 0, 110],    // Climbing icy banks (Flattened)
+      [-30, 0, 140],      // Sharp snowy double hairpins (Flattened)
+      [40, 0, 110],       // Glacial lake overlooking straight (Flattened)
+      [90, 0, 60],       // Ice sculpture archway climb (Flattened)
+      [70, 0, 10],        // Winding down (Flattened)
+      [30, 0, 5],         // home stretch (Flattened)
+      [0, 0, 0]
+    ],
+    boosterPads: [
+      [-40, 0, -25],
+      [-265, 0, -70],
+      [-140, 0, 135]
+    ],
+    jumpRamps: [
+      [-280, 0, -80]
+    ],
+    shortcuts: [
+      [-65, 0, 125]
     ]
   }
 ];

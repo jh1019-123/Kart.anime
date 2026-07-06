@@ -129,6 +129,23 @@ export class PeerNetworkManager {
   // Handle data-exchange for Host & Client connections
   handleIncomingConnection(conn: DataConnection) {
     const peerId = conn.peer;
+
+    // Enforce max 5 players limit on the host side
+    if (this.role === 'host' && this.participants.length >= 5) {
+      setTimeout(() => {
+        if (conn.open) {
+          conn.send({
+            type: 'connection-rejected',
+            payload: { reason: '방 인원이 가득 찼습니다. (최대 5명)' }
+          });
+          setTimeout(() => conn.close(), 200);
+        } else {
+          conn.close();
+        }
+      }, 100);
+      return;
+    }
+
     this.connections[peerId] = conn;
 
     conn.on('open', () => {
@@ -190,6 +207,13 @@ export class PeerNetworkManager {
         if (this.role === 'client') {
           this.participants = msg.payload;
           this.onParticipantsChange([...this.participants]);
+        }
+        break;
+
+      case 'connection-rejected':
+        if (this.role === 'client') {
+          this.onPeerError(msg.payload.reason || '방 인원 초과 상태입니다.');
+          this.cleanup();
         }
         break;
 

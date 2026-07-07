@@ -396,5 +396,23 @@ export const MAPS: MapInfo[] = [
     shortcuts: [
       [-65, 0, 125]
     ]
+  },
+  {
+    id: 'empty_arena',
+    name: '콜로세움 경기장 (Colosseum Arena)',
+    description: '어떠한 가파른 코너도 굴곡진 고저차도 존재하지 않는 거대한 원형 격투 경기장. 오직 잉크 영역 도색 대전과 플래그 사수전에 특화된 최적의 무대입니다.',
+    difficulty: '★☆☆',
+    themeColor: 'emerald-500',
+    skyColor: 0x060b24,
+    points: [
+      [0, 0, 0],
+      [50, 0, 50],
+      [100, 0, 0],
+      [50, 0, -50],
+      [-50, 0, -50],
+      [-100, 0, 0],
+      [-50, 0, 50],
+      [0, 0, 0]
+    ]
   }
 ];

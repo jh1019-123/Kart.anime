@@ -2610,8 +2610,35 @@ export class GameEngine {
     });
   }
 
+  getRoadHeightAt(pos: THREE.Vector3): number {
+    if (this.mapInfo && this.mapInfo.id === 'empty_arena') {
+      return 0;
+    }
+    if (!this.trackSpline) {
+      return 0;
+    }
+    const t = this.getNearestTrackSplinePoint(pos);
+    const pt = this.trackSpline.getPointAt(t);
+    return pt.y * 0.01;
+  }
+
   spawnPaintSpot(pos: THREE.Vector3, owner: 'player' | 'ai') {
     const color = owner === 'player' ? 0x22d3ee : 0xec4899; // Cyan vs Neon Rose
+    
+    // Remove overlapping paint spots to handle recoloring and prevent stacking/clutter
+    const overlapThreshold = 5.2;
+    this.paints = this.paints.filter(p => {
+      const dist = p.mesh.position.distanceTo(pos);
+      if (dist < overlapThreshold) {
+        this.scene.remove(p.mesh);
+        p.mesh.geometry.dispose();
+        if (Array.isArray(p.mesh.material)) p.mesh.material.forEach(m => m.dispose());
+        else p.mesh.material.dispose();
+        return false;
+      }
+      return true;
+    });
+
     const geo = new THREE.CylinderGeometry(4.2, 4.2, 0.05, 10);
     const mat = new THREE.MeshBasicMaterial({
       color: color,
@@ -2620,12 +2647,14 @@ export class GameEngine {
     });
     const spot = new THREE.Mesh(geo, mat);
     spot.position.copy(pos);
-    spot.position.y = 0.05 + Math.random() * 0.04;
+    const roadY = this.getRoadHeightAt(pos);
+    spot.position.y = roadY + 0.05 + Math.random() * 0.04;
     
     this.scene.add(spot);
     this.paints.push({ mesh: spot, owner });
 
-    if (this.paints.length > 180) {
+    // Increased paint limit from 180 to 1500 for proper paint area persistence
+    if (this.paints.length > 1500) {
       const oldest = this.paints.shift();
       if (oldest) {
         this.scene.remove(oldest.mesh);
@@ -2673,7 +2702,8 @@ export class GameEngine {
       this.createSmokeParticle(bullet.position, bulletColor, 0.25);
 
       age++;
-      const isHitGround = bullet.position.y <= 0.2;
+      const roadY = this.getRoadHeightAt(bullet.position);
+      const isHitGround = bullet.position.y <= roadY + 0.2;
       const isExpired = age > 25;
 
       if (isHitGround || isExpired) {
@@ -2681,7 +2711,7 @@ export class GameEngine {
         try { this.scene.remove(bullet); } catch (e) {}
 
         const impactPos = bullet.position.clone();
-        impactPos.y = 0.01;
+        impactPos.y = roadY;
         
         this.spawnPaintSpot(impactPos, owner);
         for (let i = 0; i < 3; i++) {
@@ -2749,13 +2779,14 @@ export class GameEngine {
       this.createSmokeParticle(bomb.position, bulletColor, 0.45);
 
       age++;
-      const isHitGround = bomb.position.y <= 0.3;
+      const roadY = this.getRoadHeightAt(bomb.position);
+      const isHitGround = bomb.position.y <= roadY + 0.3;
       if (isHitGround || age > 40) {
         clearInterval(bombInterval);
         try { this.scene.remove(bomb); } catch (e) {}
 
         const impactPos = bomb.position.clone();
-        impactPos.y = 0.01;
+        impactPos.y = roadY;
 
         this.spawnPaintSpot(impactPos, owner);
         for (let i = 0; i < 9; i++) {
@@ -3354,15 +3385,22 @@ export class GameEngine {
       // AI shooting automated mechanism to make it highly dynamic & fun
       if (this.aiKart && this.aiKart.mesh) {
         const distToPlayer = this.aiKart.mesh.position.distanceTo(this.playerKart.mesh.position);
-        if (distToPlayer < 50.0) {
-          // AI fires paint bullets every 1.8 seconds (108 ticks) if close
-          if (this.paintTimer % 108 === 0) {
-            this.shootPaintGun('ai');
-          }
-          // AI throws a massive paint bomb every 7.5 seconds (450 ticks)
-          if (this.paintTimer % 450 === 0) {
-            this.throwPaintBomb('ai');
-          }
+        
+        // AI fires paint bullets to paint the ground even when far to cover turf
+        let gunFrequency = 45; // default paint coverage interval
+        let bombFrequency = 240; // default paint bomb interval
+        
+        if (distToPlayer < 60.0) {
+          // Rapid fire and frequent bombs when close to the player to combat/disrupt them
+          gunFrequency = 18;
+          bombFrequency = 120;
+        }
+
+        if (this.paintTimer % gunFrequency === 0) {
+          this.shootPaintGun('ai');
+        }
+        if (this.paintTimer % bombFrequency === 0) {
+          this.throwPaintBomb('ai');
         }
       }
     }

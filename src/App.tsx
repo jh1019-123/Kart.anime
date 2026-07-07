@@ -106,51 +106,51 @@ export interface KartChallengeInfo {
 export const KART_CHALLENGES: Record<string, KartChallengeInfo> = {
   pink_thunder: {
     title: "부드러운 주행의 시작",
-    challenge: "커먼핑크를 타고 트랙 완주하기",
-    reward: "칭호 '비기너' 획득 & 50골드",
-    targetCount: 1
+    challenge: "커먼핑크를 타고 트랙 완주 3회 완료하기",
+    reward: "칭호 '비기너' 획득 & 150골드",
+    targetCount: 3
   },
   blue_lightning: {
     title: "바람을 가르는 바람깃털",
-    challenge: "크로스 윈드로 가속 부스터 5회 쓰기",
-    reward: "칭호 '윈드 러너' 획득 & 100골드",
-    targetCount: 5
+    challenge: "크로스 윈드로 가속 부스터 누적 30회 작동하기",
+    reward: "칭호 '윈드 러너' 획득 & 300골드",
+    targetCount: 30
   },
   golden_hero: {
     title: "용맹한 성검의 주인",
-    challenge: "브레이브칼리버로 드리프트 10회 작동하기",
-    reward: "칭호 '성검사' 획득 & 120골드",
-    targetCount: 10
+    challenge: "브레이브칼리버로 드리프트 누적 50회 시전하기",
+    reward: "칭호 '성검사' 획득 & 360골드",
+    targetCount: 50
   },
   neon_dragon: {
     title: "네온 밤하늘의 지배자",
-    challenge: "네온 페라리로 완주 누적 2회 돌파하기",
-    reward: "칭호 '네온 드래곤' 획득 & 150골드",
-    targetCount: 2
+    challenge: "네온 페라리로 완주 누적 5회 돌파하기",
+    reward: "칭호 '네온 드래곤' 획득 & 450골드",
+    targetCount: 5
   },
   crimson_vortex: {
     title: "진홍빛 소용돌이 기류",
-    challenge: "플린트로 부스터 누적 15회 발동하기",
-    reward: "칭호 '불사조' 획득 & 200골드",
-    targetCount: 15
+    challenge: "플린트로 부스터 누적 60회 점화하기",
+    reward: "칭호 '불사조' 획득 & 600골드",
+    targetCount: 60
   },
   obsidian_shadow: {
     title: "심연의 어둠 그림자",
-    challenge: "다크 옵시디언으로 아이템박스 6회 획득하기",
-    reward: "칭호 '섀도우 마스터' 획득 & 300골드",
-    targetCount: 6
+    challenge: "다크 옵시디언으로 아이템박스 누적 25회 획득하기",
+    reward: "칭호 '섀도우 마스터' 획득 & 800골드",
+    targetCount: 25
   },
   emperor_absolute: {
     title: "성계 패권의 정복 군주",
-    challenge: "디 아웃레이지 엠퍼러로 완주 3회 달성하기",
-    reward: "칭호 '황제' 획득 & 500골드",
-    targetCount: 3
+    challenge: "디 아웃레이지 엠퍼러로 완주 누적 10회 달성하기",
+    reward: "칭호 '황제' 획득 & 1500골드",
+    targetCount: 10
   },
   outrage_supreme_dev: {
     title: "코드의 창조주",
-    challenge: "개발자 머신으로 최고 속도 5회 도달하기",
-    reward: "칭호 '디벨로퍼 신' 획득 & 999골드",
-    targetCount: 5
+    challenge: "개발자 머신으로 최고 속도 200km/h 이상 누적 20회 돌파하기",
+    reward: "칭호 '디벨로퍼 신' 획득 & 2000골드",
+    targetCount: 20
   }
 };
 
@@ -529,6 +529,16 @@ export default function App() {
   const netManagerRef = useRef<PeerNetworkManager | null>(null);
   const lastPaintGunShotRef = useRef<number>(0);
   const lastPaintBombRef = useRef<number>(0);
+  const activeItemRef = useRef<string | null>(null);
+
+  const updateActiveItem = (item: string | null) => {
+    activeItemRef.current = item;
+    setActiveItem(item);
+  };
+
+  useEffect(() => {
+    activeItemRef.current = activeItem;
+  }, [activeItem]);
 
   // Sync to Storage
   useEffect(() => {
@@ -1108,7 +1118,7 @@ export default function App() {
       setSpeedVal(0);
       setBoosterGauge(0);
       setBoosterStock(0);
-      setActiveItem(null);
+      updateActiveItem(null);
       setShieldActive(false);
       setCrashCountThisRace(0);
 
@@ -1736,13 +1746,13 @@ export default function App() {
   };
 
   const triggerItemAcquisition = () => {
-    if (activeItem) return;
+    if (activeItemRef.current) return;
     AudioEngine.playItemPickup();
     triggerComicTextPop('ITEM BOX', '#eab308');
 
     const itemList = ['booster', 'shield', 'banana', 'missile'];
     const rolledItem = itemList[Math.floor(Math.random() * itemList.length)];
-    setActiveItem(rolledItem);
+    updateActiveItem(rolledItem);
   };
 
   const triggerItemSlinger = () => {
@@ -1764,9 +1774,9 @@ export default function App() {
       return;
     }
 
-    if (!activeItem) return;
-    const used = activeItem;
-    setActiveItem(null);
+    if (!activeItemRef.current) return;
+    const used = activeItemRef.current;
+    updateActiveItem(null);
 
     if (engineRef.current) {
       switch (used) {
@@ -1831,9 +1841,10 @@ export default function App() {
       updateAchievementProgress('gacha_spins', 1);
 
       let counter = 0;
+      const gachaPool = KARTS.filter(k => k.id !== 'outrage_supreme_dev');
       const interval = setInterval(() => {
         try {
-          const randomKart = KARTS[Math.floor(Math.random() * KARTS.length)];
+          const randomKart = gachaPool[Math.floor(Math.random() * gachaPool.length)];
           setGachaIntervalText(randomKart.name.split(' (')[0]);
           counter++;
 
@@ -1845,13 +1856,13 @@ export default function App() {
             const roll = Math.random() * 100;
             let finalKart: KartInfo;
             if (roll < 4) { // Legendary rate reduced from 10% to 4% to make it highly exclusive
-              const legendaries = KARTS.filter(k => k.rarity === 'Legendary');
-              finalKart = legendaries[Math.floor(Math.random() * legendaries.length)] || KARTS[KARTS.length - 1];
+              const legendaries = KARTS.filter(k => k.rarity === 'Legendary' && k.id !== 'outrage_supreme_dev');
+              finalKart = legendaries[Math.floor(Math.random() * legendaries.length)] || gachaPool[gachaPool.length - 1];
             } else if (roll < 44) { // Rare rate adjusted to 44%
-              const rares = KARTS.filter(k => k.rarity === 'Rare');
+              const rares = KARTS.filter(k => k.rarity === 'Rare' && k.id !== 'outrage_supreme_dev');
               finalKart = rares[Math.floor(Math.random() * rares.length)];
             } else {
-              const normals = KARTS.filter(k => k.rarity === 'Normal');
+              const normals = KARTS.filter(k => k.rarity === 'Normal' && k.id !== 'outrage_supreme_dev');
               finalKart = normals[Math.floor(Math.random() * normals.length)];
             }
 
@@ -2005,7 +2016,7 @@ export default function App() {
             </div>
 
             <h2 className="text-2xl md:text-3xl font-black tracking-tight text-yellow-300 uppercase italic">
-              KART-RIDER ARCADE
+              KARTRIDER-ARCADE
             </h2>
             <p className="text-cyan-400 text-xs font-black tracking-widest mt-1 mb-6">
               조작 형태 선택 (CHOOSE CONTROL MODE)
@@ -2129,7 +2140,7 @@ export default function App() {
             {/* Title in the Top Center */}
             <div className="text-center transform -rotate-1 flex-1">
               <h1 className="text-3xl md:text-5xl font-black italic tracking-wider text-yellow-300 drop-shadow-[0_3px_12px_rgba(234,179,8,0.7)] font-display uppercase font-extrabold flex items-center justify-center">
-                KART-RIDER <span className="text-white drop-shadow-[0_0_8px_rgba(6,182,212,0.9)] ml-2">ARCADE</span>
+                KARTRIDER-ARCADE
               </h1>
               <p className="text-cyan-450 text-cyan-400 text-[10px] font-black uppercase tracking-widest mt-1">
                 ⚡ 초고속 실시간 멀티플레이어 레이싱 ⚡
@@ -2958,7 +2969,17 @@ export default function App() {
                                       disabled={!isCompleted || isTitleClaimed}
                                       onClick={() => {
                                         triggerAudioInit();
-                                        setGold(prev => prev + (currentKart.id === 'outrage_supreme_dev' ? 999 : currentKart.id === 'emperor_absolute' ? 500 : 150));
+                                        let rewardGold = 150;
+                                        if (currentKart.id === 'pink_thunder') rewardGold = 150;
+                                        else if (currentKart.id === 'blue_lightning') rewardGold = 300;
+                                        else if (currentKart.id === 'golden_hero') rewardGold = 360;
+                                        else if (currentKart.id === 'neon_dragon') rewardGold = 450;
+                                        else if (currentKart.id === 'crimson_vortex') rewardGold = 600;
+                                        else if (currentKart.id === 'obsidian_shadow') rewardGold = 800;
+                                        else if (currentKart.id === 'emperor_absolute') rewardGold = 1500;
+                                        else if (currentKart.id === 'outrage_supreme_dev') rewardGold = 2000;
+                                        
+                                        setGold(prev => prev + rewardGold);
                                         setClaimedKartTitles(prev => [...prev, currentKart.id]);
                                         setUnlockedTitles(prev => {
                                           const nextTitle = challengeInfo.reward.split("'")[1] || challengeInfo.title;
@@ -3974,7 +3995,12 @@ export default function App() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                    {MAPS.map((m) => {
+                    {MAPS.filter((m) => {
+                      if (m.id === 'empty_arena') {
+                        return gameMode === 'paint_turf' || gameMode === 'flag_hunt';
+                      }
+                      return gameMode !== 'paint_turf' && gameMode !== 'flag_hunt';
+                    }).map((m) => {
                       const isSelected = selectedMapId === m.id;
                       const difficultyColor = (m.difficulty === '★★★' || m.difficulty === '어려움') ? 'text-red-500' : (m.difficulty === '★★☆' || m.difficulty === '중') ? 'text-yellow-400' : 'text-green-450 text-green-400';
                       const recCount = mapRecommendations[m.id] || 0;
@@ -5044,7 +5070,15 @@ export default function App() {
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto normal-scrollbar pr-1">
                             {(() => {
-                              const userRecords = leaderboard.filter(r => r.isPlayer);
+                              const uniquePlayers: Record<string, typeof leaderboard[0]> = {};
+                              leaderboard.forEach(r => {
+                                if (r.isPlayer) {
+                                  if (!uniquePlayers[r.playerName] || r.finalTimeMs < uniquePlayers[r.playerName].finalTimeMs) {
+                                    uniquePlayers[r.playerName] = r;
+                                  }
+                                }
+                              });
+                              const userRecords = Object.values(uniquePlayers).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
                               if (userRecords.length === 0) {
                                 return (
                                   <div className="col-span-2 text-center py-10 text-gray-500 text-xs font-medium">
@@ -5143,9 +5177,15 @@ export default function App() {
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto normal-scrollbar pr-1">
                             {(() => {
                               const currMapNameClean = currentMap.name.split(' (')[0];
-                              const records = leaderboard
+                              const uniqueMapPlayers: Record<string, typeof leaderboard[0]> = {};
+                              leaderboard
                                 .filter(r => r.isPlayer && r.mapName === currMapNameClean)
-                                .sort((a,b) => a.finalTimeMs - b.finalTimeMs);
+                                .forEach(r => {
+                                  if (!uniqueMapPlayers[r.playerName] || r.finalTimeMs < uniqueMapPlayers[r.playerName].finalTimeMs) {
+                                    uniqueMapPlayers[r.playerName] = r;
+                                  }
+                                });
+                              const records = Object.values(uniqueMapPlayers).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
 
                               if (records.length === 0) {
                                 return (

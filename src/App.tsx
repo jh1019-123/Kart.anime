@@ -357,7 +357,7 @@ export default function App() {
       { id: 'gacha_spins', name: '차고지 대부', desc: '행운의 뽑기 상점 3회 참여', target: 3, current: 0, completed: false, rewardClaimed: false, rewardGold: 200, rewardTitle: '수집 대마왕' },
       { id: 'time_under_65', name: '한계 돌파', desc: '스카이 웨이 완주 리포트 65초 미만 돌파', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 800, rewardTitle: '빛의 속도', rewardSkin: 'diamond_silver' },
       { id: 'no_crash_finish', name: '무결점 드라이버', desc: '기물이나 외벽 충돌 0회 상태로 레이스 완주', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 1000, rewardTitle: '신의 경지', rewardSkin: 'emerald_gold' },
-      { id: 'all_maps_under_28', name: '한계 속도의 군주', desc: '모든 5개 트랙 각각 28초 이내 완주 기록 달성', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 2000, rewardTitle: '광속 지배자', rewardSkin: 'neon_pulse' }
+      { id: 'all_maps_under_28', name: '한계 속도의 군주', desc: '기본 5개 트랙 각각 28초 이내 완주 기록 달성 (롱 코스 제외)', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 2000, rewardTitle: '광속 지배자', rewardSkin: 'neon_pulse' }
     ];
 
     try {
@@ -536,10 +536,6 @@ export default function App() {
     setActiveItem(item);
   };
 
-  useEffect(() => {
-    activeItemRef.current = activeItem;
-  }, [activeItem]);
-
   // Sync to Storage
   useEffect(() => {
     localStorage.setItem('anime_gold', gold.toString());
@@ -702,7 +698,22 @@ export default function App() {
     if (cached) {
       setLeaderboard(JSON.parse(cached));
     } else {
-      const defaultLeaderboard: any[] = [];
+      const defaultLeaderboard = [
+        { id: 'def-1', playerName: '다오 (Dao)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:24.52', finalTimeMs: 24520, date: '2026.07.08', isPlayer: false },
+        { id: 'def-2', playerName: '배찌 (Bazzi)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '브레이브칼리버', finalTimeStr: '00:25.10', finalTimeMs: 25100, date: '2026.07.09', isPlayer: false },
+        { id: 'def-3', playerName: '우니 (Wuni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:27.42', finalTimeMs: 27420, date: '2026.07.09', isPlayer: false },
+        { id: 'def-4', playerName: '디지니 (Dizni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:28.95', finalTimeMs: 28950, date: '2026.07.08', isPlayer: false },
+        { id: 'def-5', playerName: '마리드 (Marid)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.15', finalTimeMs: 26150, date: '2026.07.09', isPlayer: false },
+        { id: 'def-6', playerName: '케피 (Kephi)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:27.80', finalTimeMs: 27800, date: '2026.07.07', isPlayer: false },
+        { id: 'def-7', playerName: '다오 (Dao)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:25.88', finalTimeMs: 25880, date: '2026.07.09', isPlayer: false },
+        { id: 'def-8', playerName: '배찌 (Bazzi)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.40', finalTimeMs: 26400, date: '2026.07.08', isPlayer: false },
+        { id: 'def-9', playerName: '우니 (Wuni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:27.12', finalTimeMs: 27120, date: '2026.07.09', isPlayer: false },
+        { id: 'def-10', playerName: '디지니 (Dizni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:28.05', finalTimeMs: 28050, date: '2026.07.07', isPlayer: false },
+        { id: 'def-11', playerName: '에티 (Etti)', mapName: '봄날의 흩날리는 벚꽃길', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:42.15', finalTimeMs: 42150, date: '2026.07.08', isPlayer: false },
+        { id: 'def-12', playerName: '모스 (Mos)', mapName: '여름 빌리지 코코넛 해안', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:46.30', finalTimeMs: 46300, date: '2026.07.09', isPlayer: false },
+        { id: 'def-13', playerName: '다오 (Dao)', mapName: '가을빛 단풍나무 비밀 계곡', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:44.75', finalTimeMs: 44750, date: '2026.07.09', isPlayer: false },
+        { id: 'def-14', playerName: '배찌 (Bazzi)', mapName: '겨울 왕국 설화의 하얀 트랙', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:51.20', finalTimeMs: 51200, date: '2026.07.08', isPlayer: false }
+      ];
       localStorage.setItem('kart_rider_leaderboard', JSON.stringify(defaultLeaderboard));
       setLeaderboard(defaultLeaderboard);
     }
@@ -830,7 +841,7 @@ export default function App() {
     netManager.onLobbyStateReceived = (mapId, mode) => {
       setSelectedMapId(mapId);
       const matchedMode = mode as any;
-      if (['speed','item','time_attack','ten_laps','coin_rush'].includes(matchedMode)) {
+      if (matchedMode) {
         setGameMode(matchedMode);
       }
     };
@@ -838,7 +849,7 @@ export default function App() {
     netManager.onGameStartReceived = (mapId, mode) => {
       setSelectedMapId(mapId);
       const matchedMode = mode as any;
-      if (['speed','item','time_attack','ten_laps','coin_rush'].includes(matchedMode)) {
+      if (matchedMode) {
         setGameMode(matchedMode);
       }
       setIsMultiplayerActive(true);
@@ -1053,6 +1064,21 @@ export default function App() {
             netManagerRef.current.myInfo.peerId,
             isMultiplayerActive
           );
+
+          // Relay Mode Lap Synchronizer
+          if (gameMode === 'relay_race') {
+            const myIndex = instance.myParticipantIndex;
+            const teammateIndex = myIndex === 0 ? 1 : myIndex === 1 ? 0 : myIndex === 2 ? 3 : 2;
+            const teammate = netManagerRef.current.participants[teammateIndex];
+            if (teammate) {
+              const teammateLap = teammate.currentLap || 1;
+              if (teammateLap > instance.lap) {
+                instance.lap = teammateLap;
+                setCurrentLap(teammateLap);
+                instance.swapRelayKart();
+              }
+            }
+          }
         }
 
         if (minimapCanvasRef.current) {
@@ -1070,18 +1096,18 @@ export default function App() {
         cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-  }, [gameState, currentKart, isMultiplayerActive, netRole, controlMode]);
+  }, [gameState, currentKart, isMultiplayerActive, netRole, controlMode, gameMode]);
 
   // --- Start Racing Sequencer ---
   const launchRace = (forceStart = false, overrideMapId?: string, overrideGameMode?: string) => {
     triggerAudioInit();
     const activeGameMode = overrideGameMode || gameMode;
     if (activeGameMode === 'relay_race') {
-      if (!isMultiplayerActive) {
+      if (!netRole) {
         showHUDNotification('진입 불가', '이어달리기 모드는 실시간 멀티플레이 친구 대전에서만 가능합니다.');
         return;
       }
-      if (participants.length !== 4) {
+      if (!forceStart && participants.length !== 4) {
         showHUDNotification('인원 규격 에러', `이어달리기 모드는 오직 4명만 할 수 있습니다. (현재 대기 인원: ${participants.length}명)`);
         return;
       }
@@ -1716,23 +1742,44 @@ export default function App() {
         item: '아이템전',
         time_attack: '타임어택',
         ten_laps: '10바퀴 레이스',
-        super_nitro: '무제한 부스터'
+        super_nitro: '무제한 부스터',
+        relay_race: '이어달리기',
+        paint_turf: '스플래시 터프전',
+        flag_hunt: '플래그 매치',
+        obstacle_dash: '장애물 레이스'
       };
       
-      const newPlayerRecord = {
-        id: `player-${Date.now()}`,
-        playerName: `${playerNameInput} (나)`,
-        mapName: currentMap.name.split(' (')[0],
-        gameMode: modeMap[gameMode] || gameMode,
-        kartName: currentKart.name,
-        finalTimeStr: timeStr,
-        finalTimeMs: finalTime,
-        date: todayStr,
-        isPlayer: true
+      const parseTimeStrToMs = (str: string): number => {
+        if (!str || str === '--:--.--') return 9999999;
+        try {
+          const parts = str.split(':');
+          if (parts.length === 2) {
+            const mins = parseInt(parts[0], 10);
+            const secParts = parts[1].split('.');
+            const secs = parseInt(secParts[0], 10);
+            const mils = parseInt(secParts[1], 10) * 10;
+            return mins * 60000 + secs * 1000 + mils;
+          }
+        } catch (err) {
+          // fallback
+        }
+        return 9999999;
       };
 
+      const newRecords = finalRanks.map((r, idx) => ({
+        id: `${r.isPlayer ? 'player' : 'rival'}-${Date.now()}-${idx}`,
+        playerName: r.name,
+        mapName: currentMap.name.split(' (')[0],
+        gameMode: modeMap[gameMode] || gameMode,
+        kartName: r.kartName,
+        finalTimeStr: r.timeStr,
+        finalTimeMs: r.isPlayer ? finalTime : parseTimeStrToMs(r.timeStr),
+        date: todayStr,
+        isPlayer: r.isPlayer
+      }));
+
       const currentLeaderboard = JSON.parse(localStorage.getItem('kart_rider_leaderboard') || '[]');
-      const sorted = [newPlayerRecord, ...currentLeaderboard].sort((a, b) => a.finalTimeMs - b.finalTimeMs).slice(0, 40);
+      const sorted = [...newRecords, ...currentLeaderboard].sort((a, b) => a.finalTimeMs - b.finalTimeMs).slice(0, 100);
       localStorage.setItem('kart_rider_leaderboard', JSON.stringify(sorted));
       setLeaderboard(sorted);
     } catch (e) {
@@ -2809,8 +2856,7 @@ export default function App() {
                             );
                           })()}
 
-                          {/* Section 2: Decal Painting (도색 기능 통합!) */}
-                          <DecalPainter pixels={customDecal} onChange={(newDecal) => setCustomDecal(newDecal)} />
+                          {/* Decal Painting removed */}
 
                           {/* Section 3: Underglow Styling & Shop */}
                           <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-4.5 flex flex-col space-y-3 shadow-md">
@@ -4962,70 +5008,7 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Skin customization list */}
-                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
-                          <h4 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-pink-400 to-amber-405 to-amber-400 uppercase tracking-widest font-mono mb-2.5">
-                            🎨 3D 카트바디 특수 도색 가죽 스킨 (Chassis Coating Visuals)
-                          </h4>
-                          <span className="text-[10px] text-slate-400 leading-normal block mb-4 font-sans">
-                            차고의 카트 바디 실시간 도색을 변경하는 고농도 특수 알루미늄 나노 입자 스킨 시스템입니다. 게임 실행 시 카트에 즉각 반영됩니다!
-                          </span>
-
-                           <div className="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
-                            {[
-                              { id: 'default', label: '오리지널 엔진', desc: '고유 카트 기본 배색', hex: '#6366f1' },
-                              { id: 'magma_red', label: '화염 마그마 레드', desc: '붉은 화산 특수 도장', hex: '#ef4444' },
-                              { id: 'diamond_silver', label: '다이아 플래티넘', desc: '백금 실버 실린더 도장', hex: '#cbd5e1' },
-                              { id: 'midnight_obsidian', label: '미드나잇 흑옵', desc: '매혹적인 밤하늘 흑색', hex: '#090d16' },
-                              { id: 'emerald_gold', label: '에메랄드 포레스트', desc: '신비의 옥색 골드 배색', hex: '#10b981' },
-                              { id: 'neon_pulse', label: '네온 펄스', desc: '도전 특전 초광속 핑크&사이언 도색', hex: '#06b6d4' }
-                            ].map((sk) => {
-                              const isOwned = unlockedSkins.includes(sk.id);
-                              const isEquipped = selectedSkinColor === sk.id;
-                              return (
-                                <div 
-                                  key={sk.id}
-                                  className={`p-2 bg-slate-900 border rounded-xl flex flex-col justify-between transition-colors ${
-                                    isEquipped 
-                                      ? 'border-amber-400 bg-amber-950/5' 
-                                      : isOwned ? 'border-slate-850 hover:border-slate-700' : 'border-slate-900/40 opacity-55'
-                                  }`}
-                                >
-                                  <div>
-                                    <div className="flex items-center space-x-1 mb-1">
-                                      <span className="w-2.5 h-2.5 rounded-full border border-white/20" style={{ backgroundColor: sk.hex }} />
-                                      <span className="text-[10px] font-black text-white">{sk.label}</span>
-                                    </div>
-                                    <div className="text-[8px] text-gray-500 leading-snug">{sk.desc}</div>
-                                  </div>
-                                  <div className="mt-3">
-                                    {isEquipped ? (
-                                      <span className="text-[8px] text-amber-500 font-extrabold flex items-center justify-center bg-amber-500/10 py-1 border border-amber-500/20 rounded-md font-sans">
-                                        ACTIVE
-                                      </span>
-                                    ) : isOwned ? (
-                                      <button
-                                        onClick={() => {
-                                          triggerAudioInit();
-                                          setSelectedSkinColor(sk.id);
-                                          showHUDNotification('스킨 변경 완료', `[🎨 ${sk.label}] 컬러 배색을 기체에 동사 연동 완료!`);
-                                        }}
-                                        className="w-full py-1 bg-slate-850 hover:bg-slate-800 hover:border-amber-500 text-[8px] font-extrabold rounded-md text-white border border-slate-750 transition-colors cursor-pointer font-sans"
-                                      >
-                                        도장하기
-                                      </button>
-                                    ) : (
-                                      <span className="text-[8px] text-slate-600 block text-center py-1 bg-slate-950/60 rounded border border-transparent">
-                                        🔒 잠겨있음
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
+                        {/* Skin customization removed */}
                       </div>
                     </div>
                   )}
@@ -5072,10 +5055,8 @@ export default function App() {
                             {(() => {
                               const uniquePlayers: Record<string, typeof leaderboard[0]> = {};
                               leaderboard.forEach(r => {
-                                if (r.isPlayer) {
-                                  if (!uniquePlayers[r.playerName] || r.finalTimeMs < uniquePlayers[r.playerName].finalTimeMs) {
-                                    uniquePlayers[r.playerName] = r;
-                                  }
+                                if (!uniquePlayers[r.playerName] || r.finalTimeMs < uniquePlayers[r.playerName].finalTimeMs) {
+                                  uniquePlayers[r.playerName] = r;
                                 }
                               });
                               const userRecords = Object.values(uniquePlayers).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
@@ -5179,7 +5160,7 @@ export default function App() {
                               const currMapNameClean = currentMap.name.split(' (')[0];
                               const uniqueMapPlayers: Record<string, typeof leaderboard[0]> = {};
                               leaderboard
-                                .filter(r => r.isPlayer && r.mapName === currMapNameClean)
+                                .filter(r => r.mapName === currMapNameClean)
                                 .forEach(r => {
                                   if (!uniqueMapPlayers[r.playerName] || r.finalTimeMs < uniqueMapPlayers[r.playerName].finalTimeMs) {
                                     uniqueMapPlayers[r.playerName] = r;
@@ -5292,7 +5273,6 @@ export default function App() {
                                   <div className="text-gray-500 font-bold uppercase font-mono">REWARDS</div>
                                   <span className="text-yellow-400 font-bold font-mono text-[10px] block mt-0.5">+{ach.rewardGold}G</span>
                                   {ach.rewardTitle && <span className="text-pink-400 bg-pink-500/10 px-1 py-0.2 rounded text-[7.5px] block truncate mt-1">🏷️ {ach.rewardTitle}</span>}
-                                  {ach.rewardSkin && <span className="text-amber-400 bg-amber-500/10 px-1 py-0.2 rounded text-[7.5px] block truncate mt-1">🎨 Skin 도색</span>}
                                 </div>
 
                                 <div className="mt-2.5 font-sans">

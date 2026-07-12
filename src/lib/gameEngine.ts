@@ -1044,6 +1044,7 @@ export class GameEngine {
   isSuperNitro = false;
   aiBoosterActive = false;
   aiBoosterTimer = 0;
+  smoothedSteerRatio = 0;
   playerAuraId = 'none';
   playerKartId = 'pink_thunder';
   aiKartId = 'blue_lightning';
@@ -3117,11 +3118,18 @@ export class GameEngine {
       this.speed *= this.friction;
     }
 
+    // Apply smoothing to keys.steerRatio to eliminate abrupt steering snapping on mobile/drags
+    if (keys.steerRatio !== undefined) {
+      this.smoothedSteerRatio = THREE.MathUtils.lerp(this.smoothedSteerRatio, keys.steerRatio, 0.12);
+    } else {
+      this.smoothedSteerRatio = THREE.MathUtils.lerp(this.smoothedSteerRatio, 0, 0.15);
+    }
+
     let angleDiff = 0;
     if (Math.abs(this.speed) > 0.05) {
       const turnDirection = this.speed > 0 ? 1 : -1;
       if (keys.steerRatio !== undefined) {
-        const rawRatio = keys.steerRatio;
+        const rawRatio = this.smoothedSteerRatio;
         const absRatio = Math.abs(rawRatio);
         if (absRatio > 0.04) {
           // Curved mapping: gives precise gentle steering around the center and sharper steering on full pull.
@@ -3167,7 +3175,7 @@ export class GameEngine {
       if (left) steerInput = 1;
       if (right) steerInput = -1;
       if (keys.steerRatio !== undefined) {
-        steerInput = -keys.steerRatio;
+        steerInput = -this.smoothedSteerRatio;
       }
 
       const targetDriftAngle = -this.driftDirection * 0.42;

@@ -218,12 +218,56 @@ export default function App() {
     }
   };
 
-  // Mobile virtual drag-steering state
-  const [mobileSteerRatio, _setMobileSteerRatio] = useState<number>(0);
+  // Mobile virtual drag-steering state and direct high-performance DOM manipulation
   const mobileSteerRatioRef = useRef<number>(0);
   const setMobileSteerRatio = (val: number) => {
     mobileSteerRatioRef.current = val;
-    _setMobileSteerRatio(val);
+    
+    // Directly update DOM elements to ensure 120fps butter-smooth responsiveness with ZERO React re-renders!
+    const leftArrow = document.getElementById('mobile-steer-left-arrow');
+    const rightArrow = document.getElementById('mobile-steer-right-arrow');
+    const fillTrack = document.getElementById('mobile-steer-fill-track');
+    const handle = document.getElementById('mobile-steer-handle');
+
+    if (leftArrow) {
+      if (val < -0.15) {
+        leftArrow.style.color = '#22d3ee'; // cyan-400
+        leftArrow.style.transform = 'scale(1.15)';
+        leftArrow.style.filter = 'drop-shadow(0 0 8px rgba(34,211,238,0.8))';
+      } else {
+        leftArrow.style.color = '#334155'; // slate-700
+        leftArrow.style.transform = 'scale(1)';
+        leftArrow.style.filter = 'none';
+      }
+    }
+    if (rightArrow) {
+      if (val > 0.15) {
+        rightArrow.style.color = '#22d3ee'; // cyan-400
+        rightArrow.style.transform = 'scale(1.15)';
+        rightArrow.style.filter = 'drop-shadow(0 0 8px rgba(34,211,238,0.8))';
+      } else {
+        rightArrow.style.color = '#334155'; // slate-700
+        rightArrow.style.transform = 'scale(1)';
+        rightArrow.style.filter = 'none';
+      }
+    }
+    if (fillTrack) {
+      if (val < 0) {
+        fillTrack.style.left = `${50 + val * 50}%`;
+        fillTrack.style.right = '50%';
+      } else if (val > 0) {
+        fillTrack.style.left = '50%';
+        fillTrack.style.right = `${50 - val * 50}%`;
+      } else {
+        fillTrack.style.left = '50%';
+        fillTrack.style.right = '50%';
+      }
+    }
+    if (handle) {
+      // 32% bounds for position, and 45 degree maximum rotation angle!
+      handle.style.left = `calc(50% + ${val * 32}% - 24px)`;
+      handle.style.transform = `translateY(-50%) rotate(${val * 45}deg)`;
+    }
   };
 
   // --- Extended Profile, Progression, Achievements & Ghost States ---
@@ -5925,30 +5969,38 @@ export default function App() {
                   }}
                   onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
                 >
-                  <span className={`text-xl font-black transition-colors ${mobileSteerRatio < -0.15 ? 'text-cyan-400 scale-110 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-slate-700'}`}>◀</span>
+                  <span id="mobile-steer-left-arrow" className="text-xl font-black text-slate-700 transition-all">◀</span>
                   <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest pointer-events-none">STEER</span>
-                  <span className={`text-xl font-black transition-colors ${mobileSteerRatio > 0.15 ? 'text-cyan-400 scale-110 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]' : 'text-slate-700'}`}>▶</span>
+                  <span id="mobile-steer-right-arrow" className="text-xl font-black text-slate-700 transition-all">▶</span>
                   
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
                     <div className="w-[100px] h-[3px] bg-slate-800 rounded-full relative">
                       <div 
+                        id="mobile-steer-fill-track"
                         className="absolute top-0 bottom-0 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-full"
                         style={{
-                          left: mobileSteerRatio < 0 ? `${50 + mobileSteerRatio * 50}%` : '50%',
-                          right: mobileSteerRatio > 0 ? `${50 - mobileSteerRatio * 50}%` : '50%'
+                          left: '50%',
+                          right: '50%'
                         }}
                       />
                     </div>
                   </div>
 
                   <div 
-                    className="absolute top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-gradient-to-b from-cyan-400 to-indigo-500 shadow-[0_0_12px_rgba(6,182,212,0.6)] flex items-center justify-center transition-all duration-75 ease-out pointer-events-none select-none touch-none"
+                    id="mobile-steer-handle"
+                    className="absolute top-1/2 w-12 h-12 rounded-full bg-gradient-to-b from-cyan-400 to-indigo-500 shadow-[0_0_12px_rgba(6,182,212,0.6)] flex items-center justify-center pointer-events-none select-none touch-none"
                     style={{
-                      left: `calc(50% + ${mobileSteerRatio * 32}% - 24px)`
+                      left: 'calc(50% - 24px)',
+                      transform: 'translateY(-50%) rotate(0deg)'
                     }}
                   >
-                    <div className="w-8 h-8 rounded-full bg-slate-950 flex items-center justify-center">
-                      <div className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_6px_#22d3ee]" />
+                    {/* Visual 3-Spoke High-Tech Steering Wheel */}
+                    <div className="w-9 h-9 rounded-full border border-cyan-300/40 relative flex items-center justify-center">
+                      <div className="absolute w-[2px] h-full bg-cyan-300/30" />
+                      <div className="absolute h-[2px] w-full bg-cyan-300/30" />
+                      <div className="w-4 h-4 rounded-full bg-slate-950 border border-cyan-400 flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-[0_0_4px_#22d3ee]" />
+                      </div>
                     </div>
                   </div>
                 </div>

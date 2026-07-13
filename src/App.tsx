@@ -37,6 +37,8 @@ import { KartRadarChart } from './components/KartRadarChart';
 import { DecalPainter } from './components/DecalPainter';
 import { MiniKartRenderer } from './components/MiniKartRenderer';
 import { PeerNetworkManager } from './network';
+import { isSupabaseConfigured, fetchRankingsFromSupabase, saveRankingToSupabase } from './supabase';
+
 
 export interface AuraInfo {
   id: string;
@@ -472,6 +474,8 @@ export default function App() {
     };
   };
   const [gameState, setGameState] = useState<'lobby' | 'countdown' | 'playing' | 'finished'>('lobby');
+  const [showSqlHelper, setShowSqlHelper] = useState<boolean>(false);
+
   const [gameMode, setGameMode] = useState<'speed' | 'item' | 'time_attack' | 'ten_laps' | 'super_nitro' | 'flag_hunt' | 'paint_turf' | 'relay_race' | 'obstacle_dash'>('speed');
   const [leaderboard, setLeaderboard] = useState<Array<{
     id: string;
@@ -738,30 +742,71 @@ export default function App() {
 
   // Load Leaderboard
   useEffect(() => {
-    const cached = localStorage.getItem('kart_rider_leaderboard');
-    if (cached) {
-      setLeaderboard(JSON.parse(cached));
-    } else {
-      const defaultLeaderboard = [
-        { id: 'def-1', playerName: '다오 (Dao)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:24.52', finalTimeMs: 24520, date: '2026.07.08', isPlayer: false },
-        { id: 'def-2', playerName: '배찌 (Bazzi)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '브레이브칼리버', finalTimeStr: '00:25.10', finalTimeMs: 25100, date: '2026.07.09', isPlayer: false },
-        { id: 'def-3', playerName: '우니 (Wuni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:27.42', finalTimeMs: 27420, date: '2026.07.09', isPlayer: false },
-        { id: 'def-4', playerName: '디지니 (Dizni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:28.95', finalTimeMs: 28950, date: '2026.07.08', isPlayer: false },
-        { id: 'def-5', playerName: '마리드 (Marid)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.15', finalTimeMs: 26150, date: '2026.07.09', isPlayer: false },
-        { id: 'def-6', playerName: '케피 (Kephi)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:27.80', finalTimeMs: 27800, date: '2026.07.07', isPlayer: false },
-        { id: 'def-7', playerName: '다오 (Dao)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:25.88', finalTimeMs: 25880, date: '2026.07.09', isPlayer: false },
-        { id: 'def-8', playerName: '배찌 (Bazzi)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.40', finalTimeMs: 26400, date: '2026.07.08', isPlayer: false },
-        { id: 'def-9', playerName: '우니 (Wuni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:27.12', finalTimeMs: 27120, date: '2026.07.09', isPlayer: false },
-        { id: 'def-10', playerName: '디지니 (Dizni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:28.05', finalTimeMs: 28050, date: '2026.07.07', isPlayer: false },
-        { id: 'def-11', playerName: '에티 (Etti)', mapName: '봄날의 흩날리는 벚꽃길', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:42.15', finalTimeMs: 42150, date: '2026.07.08', isPlayer: false },
-        { id: 'def-12', playerName: '모스 (Mos)', mapName: '여름 빌리지 코코넛 해안', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:46.30', finalTimeMs: 46300, date: '2026.07.09', isPlayer: false },
-        { id: 'def-13', playerName: '다오 (Dao)', mapName: '가을빛 단풍나무 비밀 계곡', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:44.75', finalTimeMs: 44750, date: '2026.07.09', isPlayer: false },
-        { id: 'def-14', playerName: '배찌 (Bazzi)', mapName: '겨울 왕국 설화의 하얀 트랙', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:51.20', finalTimeMs: 51200, date: '2026.07.08', isPlayer: false }
-      ];
-      localStorage.setItem('kart_rider_leaderboard', JSON.stringify(defaultLeaderboard));
-      setLeaderboard(defaultLeaderboard);
-    }
+    const loadLeaderboardData = async () => {
+      let baseLeaderboard: Array<{
+        id: string;
+        playerName: string;
+        mapName: string;
+        gameMode: string;
+        kartName: string;
+        finalTimeStr: string;
+        finalTimeMs: number;
+        date: string;
+        isPlayer: boolean;
+      }> = [];
+
+      const cached = localStorage.getItem('kart_rider_leaderboard');
+      if (cached) {
+        baseLeaderboard = JSON.parse(cached);
+      } else {
+        const defaultLeaderboard = [
+          { id: 'def-1', playerName: '다오 (Dao)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:24.52', finalTimeMs: 24520, date: '2026.07.08', isPlayer: false },
+          { id: 'def-2', playerName: '배찌 (Bazzi)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '브레이브칼리버', finalTimeStr: '00:25.10', finalTimeMs: 25100, date: '2026.07.09', isPlayer: false },
+          { id: 'def-3', playerName: '우니 (Wuni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:27.42', finalTimeMs: 27420, date: '2026.07.09', isPlayer: false },
+          { id: 'def-4', playerName: '디지니 (Dizni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:28.95', finalTimeMs: 28950, date: '2026.07.08', isPlayer: false },
+          { id: 'def-5', playerName: '마리드 (Marid)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.15', finalTimeMs: 26150, date: '2026.07.09', isPlayer: false },
+          { id: 'def-6', playerName: '케피 (Kephi)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:27.80', finalTimeMs: 27800, date: '2026.07.07', isPlayer: false },
+          { id: 'def-7', playerName: '다오 (Dao)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:25.88', finalTimeMs: 25880, date: '2026.07.09', isPlayer: false },
+          { id: 'def-8', playerName: '배찌 (Bazzi)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.40', finalTimeMs: 26400, date: '2026.07.08', isPlayer: false },
+          { id: 'def-9', playerName: '우니 (Wuni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:27.12', finalTimeMs: 27120, date: '2026.07.09', isPlayer: false },
+          { id: 'def-10', playerName: '디지니 (Dizni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:28.05', finalTimeMs: 28050, date: '2026.07.07', isPlayer: false },
+          { id: 'def-11', playerName: '에티 (Etti)', mapName: '봄날의 흩날리는 벚꽃길', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:42.15', finalTimeMs: 42150, date: '2026.07.08', isPlayer: false },
+          { id: 'def-12', playerName: '모스 (Mos)', mapName: '여름 빌리지 코코넛 해안', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:46.30', finalTimeMs: 46300, date: '2026.07.09', isPlayer: false },
+          { id: 'def-13', playerName: '다오 (Dao)', mapName: '가을빛 단풍나무 비밀 계곡', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:44.75', finalTimeMs: 44750, date: '2026.07.09', isPlayer: false },
+          { id: 'def-14', playerName: '배찌 (Bazzi)', mapName: '겨울 왕국 설화의 하얀 트랙', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:51.20', finalTimeMs: 51200, date: '2026.07.08', isPlayer: false }
+        ];
+        baseLeaderboard = defaultLeaderboard;
+        localStorage.setItem('kart_rider_leaderboard', JSON.stringify(defaultLeaderboard));
+      }
+
+      if (isSupabaseConfigured) {
+        try {
+          const supabaseRecords = await fetchRankingsFromSupabase();
+          if (supabaseRecords.length > 0) {
+            // Filter out default records with matched player and map, prioritize live database
+            const combined = [...supabaseRecords, ...baseLeaderboard.filter(b => b.id.startsWith('def-'))];
+            const unique: Record<string, typeof combined[0]> = {};
+            combined.forEach(item => {
+              const key = `${item.playerName}-${item.mapName}`;
+              if (!unique[key] || item.finalTimeMs < unique[key].finalTimeMs) {
+                unique[key] = item;
+              }
+            });
+            const sorted = Object.values(unique).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
+            setLeaderboard(sorted);
+            return;
+          }
+        } catch (e) {
+          console.error('Supabase load failed:', e);
+        }
+      }
+
+      setLeaderboard(baseLeaderboard);
+    };
+
+    loadLeaderboardData();
   }, []);
+
 
   const triggerAudioInit = () => {
     AudioEngine.init();
@@ -1822,10 +1867,46 @@ export default function App() {
         isPlayer: r.isPlayer
       }));
 
+      // Persist to Supabase if configured
+      if (isSupabaseConfigured) {
+        const playerRec = newRecords.find(item => item.isPlayer);
+        if (playerRec) {
+          saveRankingToSupabase({
+            playerName: playerRec.playerName,
+            mapName: playerRec.mapName,
+            gameMode: playerRec.gameMode,
+            kartName: playerRec.kartName,
+            finalTimeMs: playerRec.finalTimeMs
+          }).then(success => {
+            if (success) {
+              // Reload leaderboard from Supabase to show real live listings
+              fetchRankingsFromSupabase().then(supabaseRecords => {
+                if (supabaseRecords.length > 0) {
+                  const cachedBoard = JSON.parse(localStorage.getItem('kart_rider_leaderboard') || '[]');
+                  const combined = [...supabaseRecords, ...cachedBoard.filter((b: any) => b.id.startsWith('def-'))];
+                  const unique: Record<string, typeof combined[0]> = {};
+                  combined.forEach(item => {
+                    const key = `${item.playerName}-${item.mapName}`;
+                    if (!unique[key] || item.finalTimeMs < unique[key].finalTimeMs) {
+                      unique[key] = item;
+                    }
+                  });
+                  const sorted = Object.values(unique).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
+                  setLeaderboard(sorted);
+                }
+              });
+            }
+          }).catch(err => {
+            console.error('Supabase persistence failed:', err);
+          });
+        }
+      }
+
       const currentLeaderboard = JSON.parse(localStorage.getItem('kart_rider_leaderboard') || '[]');
       const sorted = [...newRecords, ...currentLeaderboard].sort((a, b) => a.finalTimeMs - b.finalTimeMs).slice(0, 100);
       localStorage.setItem('kart_rider_leaderboard', JSON.stringify(sorted));
       setLeaderboard(sorted);
+
     } catch (e) {
       console.error(e);
     }
@@ -2182,7 +2263,7 @@ export default function App() {
 
       {/* --- MAIN LOBBY NAVIGATION CONTROL PANEL --- */}
       {gameState === 'lobby' && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-between bg-gradient-to-b from-[#020617] via-[#090d1f] to-[#020617] px-4 md:px-8 py-4 overflow-y-auto normal-scrollbar select-none">
+        <div className="absolute inset-0 z-50 flex flex-col justify-between bg-gradient-to-b from-[#030712] via-[#0b1329] to-[#030712] px-4 md:px-8 py-4 overflow-y-auto normal-scrollbar select-none">
           {/* Cybernetic High-Tech Racing Background with multiple natural parallax elements */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
             {/* Perspective wireframe grid */}
@@ -2195,9 +2276,9 @@ export default function App() {
             />
             
             {/* Glowing neon ambient orbs floating/glowing dynamically */}
-            <div className="absolute top-[12%] left-[15%] w-96 h-96 rounded-full bg-pink-500/10 filter blur-[90px] animate-pulse" style={{ animationDuration: '6s' }} />
-            <div className="absolute bottom-[10%] right-[10%] w-[450px] h-[450px] rounded-full bg-cyan-500/10 filter blur-[110px] animate-pulse" style={{ animationDuration: '9s' }} />
-            <div className="absolute top-[40%] left-[50%] -translate-x-1/2 w-[600px] h-32 rounded-full bg-blue-600/5 filter blur-[70px] animate-pulse" style={{ animationDuration: '12s' }} />
+            <div className="absolute top-[12%] left-[15%] w-96 h-96 rounded-full bg-indigo-500/10 filter blur-[100px] animate-pulse" style={{ animationDuration: '7s' }} />
+            <div className="absolute bottom-[10%] right-[10%] w-[450px] h-[450px] rounded-full bg-cyan-500/10 filter blur-[120px] animate-pulse" style={{ animationDuration: '10s' }} />
+            <div className="absolute top-[40%] left-[50%] -translate-x-1/2 w-[600px] h-32 rounded-full bg-blue-500/5 filter blur-[80px] animate-pulse" style={{ animationDuration: '14s' }} />
 
             {/* Racetrack diagonal speed vectors / warm glowing stripes */}
             <div className="absolute bottom-[-150px] left-[-100px] w-[500px] h-[300px] bg-gradient-to-tr from-yellow-500/10 to-transparent skew-x-[-30deg] border-r-4 border-yellow-500/20" />
@@ -2221,25 +2302,25 @@ export default function App() {
           </div>
           
           {/* TOP HEADER STATUS ROW */}
-          <div className="flex flex-col md:flex-row justify-between items-center w-full max-w-7xl mx-auto gap-4 z-10 py-3 border-b border-slate-800/80">
-            {/* Left helper badge */}
-            <div className="hidden md:flex items-center space-x-2 text-[10px] font-black tracking-widest text-cyan-400 font-mono">
+          <div className="flex flex-col lg:flex-row justify-between items-center w-full max-w-7xl mx-auto gap-4 z-10 py-4 border-b border-slate-800/60">
+            {/* Left helper badge with sleek styling */}
+            <div className="hidden lg:flex items-center space-x-2.5 bg-slate-950/80 px-3.5 py-1.5 rounded-full border border-slate-850">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse border border-emerald-500/50" />
-              <span>TOURNAMENT SERVER: ONLINE</span>
+              <span className="text-[10px] font-black tracking-widest text-cyan-400 font-mono">ARCADE CENTRAL SERVER: ONLINE</span>
             </div>
 
-            {/* Title in the Top Center */}
-            <div className="text-center transform -rotate-1 flex-1">
-              <h1 className="text-3xl md:text-5xl font-black italic tracking-wider text-yellow-300 drop-shadow-[0_3px_12px_rgba(234,179,8,0.7)] font-display uppercase font-extrabold flex items-center justify-center">
-                KARTRIDER-ARCADE
+            {/* Title in the Top Center: More prestigious design */}
+            <div className="text-center transform flex-1">
+              <h1 className="text-3xl md:text-5xl font-extrabold italic tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 via-amber-300 to-yellow-500 drop-shadow-[0_4px_16px_rgba(234,179,8,0.5)] font-display uppercase flex items-center justify-center">
+                KARTRIDER ARCADE
               </h1>
-              <p className="text-cyan-450 text-cyan-400 text-[10px] font-black uppercase tracking-widest mt-1">
-                ⚡ 초고속 실시간 멀티플레이어 레이싱 ⚡
+              <p className="text-cyan-400 text-[10px] font-black uppercase tracking-[0.25em] mt-1.5 flex items-center justify-center gap-1.5">
+                <span>⚡</span> ROYAL SUPREME SPEED CHAMPIONSHIP <span>⚡</span>
               </p>
             </div>
 
             {/* User nickname card & Gold displays & Control Mode Trigger */}
-            <div className="flex flex-wrap items-center gap-3 justify-center">
+            <div className="flex flex-wrap items-center gap-3.5 justify-center">
               {/* BGM Controller Button */}
               <button
                 onClick={() => {
@@ -2252,10 +2333,10 @@ export default function App() {
                     showHUDNotification('BGM 배경음악 음소거', '배경음악을 일시정지 하였습니다.');
                   }
                 }}
-                className={`px-3 py-1.5 shadow-md border rounded-xl hover:border-pink-500 transition-all text-[10.5px] font-black cursor-pointer flex items-center space-x-1.5 ${
+                className={`px-3.5 py-2 shadow-md border rounded-2xl hover:border-pink-500 transition-all text-[10.5px] font-black cursor-pointer flex items-center space-x-1.5 ${
                   lobbyBgmPlaying 
-                    ? 'bg-slate-900 border-pink-500/40 text-pink-400' 
-                    : 'bg-slate-950 border-slate-800 text-gray-500'
+                    ? 'bg-gradient-to-b from-slate-900 to-slate-950 border-pink-500/50 text-pink-400 shadow-[0_0_12px_rgba(236,72,153,0.15)]' 
+                    : 'bg-slate-950 border-slate-850 text-gray-500'
                 }`}
                 title="배경음악 재생/정지"
               >
@@ -2287,37 +2368,38 @@ export default function App() {
                   setControlMode(next);
                   showHUDNotification('조작 모드 전환', next === 'keyboard' ? 'PC 키보드 (WASD/방향키)로 제어합니다.' : '모바일용 가상 컨트롤 패드가 화면에 작동합니다.');
                 }}
-                className="px-3 py-1.5 bg-slate-900 shadow-md border border-slate-800 rounded-xl hover:border-pink-500 transition-colors text-[10.5px] font-black cursor-pointer text-cyan-400 flex items-center space-x-1.5"
+                className="px-3.5 py-2 bg-slate-950/90 shadow-md border border-slate-850 rounded-2xl hover:border-cyan-400 transition-all text-[10.5px] font-black cursor-pointer text-cyan-400 flex items-center space-x-1.5 shadow-[0_0_10px_rgba(6,182,212,0.05)]"
                 title="조작 방식 원클릭 변경"
               >
                 <span>{controlMode === 'keyboard' ? '⌨️' : '📱'}</span>
                 <span className="uppercase text-white font-mono">{controlMode === 'keyboard' ? 'PC 키보드 모드' : '모바일 터치 모드'}</span>
               </button>
 
-              <div className="flex items-stretch bg-slate-900/95 border-2 border-slate-800 p-2 text-white p-2 border-2 p-2.5 rounded-2xl shadow-xl space-x-3">
-                <div className="flex flex-col justify-between items-center rounded-xl bg-gradient-to-tr from-indigo-700 to-violet-600 p-2 text-white font-black text-center min-w-[50px] shadow-md border border-violet-500/20">
-                  <span className="text-[8px] uppercase opacity-75 font-mono">LEVEL</span>
-                  <span className="text-md leading-none mt-0.5">{level}</span>
-                  <span className="text-[7.5px] bg-slate-950/40 px-1 py-0.5 rounded mt-1.5 font-mono">{Math.floor((xp / (level * 120)) * 100)}%</span>
+              {/* Prestigious Pilot Pass License Card */}
+              <div className="flex items-stretch bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-amber-500/30 p-2.5 rounded-2xl shadow-[0_4px_20px_rgba(245,158,11,0.15)] space-x-3.5 hover:border-amber-400/50 transition-all duration-300">
+                <div className="flex flex-col justify-between items-center rounded-xl bg-gradient-to-tr from-amber-600 via-yellow-500 to-amber-500 p-2 text-slate-950 font-black text-center min-w-[55px] shadow-lg border border-yellow-400/30">
+                  <span className="text-[7.5px] uppercase opacity-80 font-mono tracking-wider">LEVEL</span>
+                  <span className="text-lg leading-none mt-0.5 font-display">{level}</span>
+                  <span className="text-[7.5px] bg-slate-950/20 px-1 py-0.5 rounded mt-1.5 font-mono">{Math.floor((xp / (level * 120)) * 100)}%</span>
                 </div>
                 <div className="text-left font-mono flex flex-col justify-center">
-                  <div className="text-[8.5px] text-pink-400 font-extrabold flex items-center space-x-1.5 mb-0.5 select-none">
-                    <span className="bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 rounded">🏷️ {selectedTitle}</span>
-                    <span className="bg-violet-500/15 border border-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded">{getTierInfo(rankPoints).icon} {getTierInfo(rankPoints).name}</span>
+                  <div className="text-[8.5px] text-pink-400 font-extrabold flex items-center space-x-1.5 mb-1 select-none">
+                    <span className="bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(236,72,153,0.05)]">🏷️ {selectedTitle}</span>
+                    <span className="bg-violet-500/15 border border-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(139,92,246,0.05)]">{getTierInfo(rankPoints).icon} {getTierInfo(rankPoints).name}</span>
                   </div>
-                  <div className="text-[10px] text-gray-400 font-bold uppercase flex items-center">
-                    <User size={10} className="mr-1 text-pink-500" />
+                  <div className="text-[11px] text-gray-200 font-bold uppercase flex items-center">
+                    <User size={11} className="mr-1.5 text-amber-400" />
                     <input 
                       type="text" 
                       value={playerNameInput}
                       onChange={(e) => setPlayerNameInput(e.target.value)}
-                      className="bg-transparent text-white outline-none border-b border-dashed border-pink-500/40 focus:border-pink-500 font-semibold py-0.5 text-xs w-28 font-sans"
+                      className="bg-transparent text-white outline-none border-b border-dashed border-amber-500/40 focus:border-amber-400 font-bold py-0.5 text-xs w-28 font-sans transition-all"
                       placeholder="라이더 이름"
                     />
                   </div>
-                  <div className="flex items-center text-yellow-400 font-black text-xs leading-none mt-1">
-                    <Coins className="mr-1 text-yellow-400" size={12} />
-                    <span>{gold} Gold</span>
+                  <div className="flex items-center text-yellow-400 font-extrabold text-xs leading-none mt-1.5">
+                    <Coins className="mr-1.5 text-yellow-400 animate-pulse" size={13} />
+                    <span className="tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-amber-400 font-display font-black">{gold.toLocaleString()} Gold</span>
                   </div>
                 </div>
               </div>
@@ -5059,10 +5141,93 @@ export default function App() {
 
                   {/* SUB-TAB 2: LEADERBOARD MATRIX */}
                   {rankingsSubTab === 'leaderboard' && (
-                    <div className="flex flex-col space-y-4 font-sans">
+                    <div className="flex flex-col space-y-4 font-sans text-left">
                       
+                      {/* Supabase Status Panel */}
+                      <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col space-y-3.5">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                          <div className="flex items-center space-x-2">
+                            <span className={`w-2.5 h-2.5 rounded-full ${isSupabaseConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+                            <span className="text-xs font-black text-gray-200">
+                              {isSupabaseConfigured 
+                                ? '🌐 실시간 Supabase 클라우드 데이터베이스 연동 활성화 완료!' 
+                                : '⚠️ 로컬 캐시 모드 구동 중 (실시간 타인 기록 연동 비활성화)'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => { triggerAudioInit(); setShowSqlHelper(!showSqlHelper); }}
+                            className="px-3 py-1 bg-slate-950 hover:bg-slate-850 text-[10.5px] text-cyan-400 font-extrabold rounded-lg border border-cyan-500/20 hover:border-cyan-400 transition-colors cursor-pointer"
+                          >
+                            {showSqlHelper ? '🛠️ 연동 도움말 접기' : '🔑 Supabase 연동 SQL & 환경설정 방법 보기'}
+                          </button>
+                        </div>
+
+                        {showSqlHelper && (
+                          <div className="p-4 bg-slate-955 bg-slate-950 rounded-xl border border-slate-850 text-xs text-gray-300 leading-relaxed space-y-3 font-mono">
+                            <p className="text-pink-400 font-bold">💡 실시간 전역 유저 랭킹 연동 방법 (Supabase Setup):</p>
+                            <ol className="list-decimal pl-4.5 space-y-1.5 text-gray-400 text-[11px] list-inside font-sans">
+                              <li><b>Supabase 프로젝트 생성:</b> supabase.com 에 무료 가입 및 프로젝트를 생성합니다.</li>
+                              <li><b>SQL 쿼리 실행:</b> 아래 SQL 스크립트를 복사하여 Supabase의 [SQL Editor]에 붙여넣고 실행(Run)합니다.</li>
+                              <li><b>환경 변수 등록:</b> 복사한 프로젝트 URL과 Anon Key를 프로젝트 `.env` 또는 Secrets panel에 등록하십시오:
+                                <div className="bg-slate-900 p-2 rounded-lg border border-slate-800 text-[10px] text-cyan-300 font-mono mt-1.5">
+                                  VITE_SUPABASE_URL="https://your-project.supabase.co"<br />
+                                  VITE_SUPABASE_ANON_KEY="your-anon-key"
+                                </div>
+                              </li>
+                            </ol>
+                            
+                            <div className="mt-3">
+                              <div className="flex justify-between items-center bg-slate-900 px-3 py-1.5 rounded-t-lg border-t border-x border-slate-800 text-[10.5px]">
+                                <span className="text-yellow-400 font-bold">📋 Supabase Table & RLS Setup SQL Script</span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS rankings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    player_name TEXT NOT NULL,
+    map_name TEXT NOT NULL,
+    final_time_ms INTEGER NOT NULL,
+    kart_name TEXT,
+    game_mode TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE rankings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access" ON rankings FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated inserts" ON rankings FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHECK (true);`);
+                                    showHUDNotification('SQL 스크립트 복사 완료!', 'Supabase 대시보드 SQL Editor에 붙여넣어 실행하세요.');
+                                  }}
+                                  className="px-2 py-0.5 bg-slate-950 hover:bg-slate-800 text-gray-400 hover:text-white rounded border border-slate-750 text-[10px] transition-all cursor-pointer"
+                                >
+                                  코드 복사하기 (Copy)
+                                </button>
+                              </div>
+                              <pre className="bg-slate-900/60 p-3 rounded-b-lg border-b border-x border-slate-800 text-[9.5px] text-emerald-400 overflow-x-auto max-h-[160px] leading-relaxed">
+{`CREATE TABLE IF NOT EXISTS rankings (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    player_name TEXT NOT NULL,
+    map_name TEXT NOT NULL,
+    final_time_ms INTEGER NOT NULL,
+    kart_name TEXT,
+    game_mode TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+ALTER TABLE rankings ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Allow public read access" ON rankings FOR SELECT USING (true);
+CREATE POLICY "Allow authenticated inserts" ON rankings FOR INSERT TO authenticated WITH CHECK (true);
+CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHECK (true);`}
+                              </pre>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       {/* Sub-tab Filter Header */}
                       <div className="flex bg-slate-950 border border-slate-850 p-1.5 rounded-2xl space-x-1.5 self-start">
+
                         {[
                           { id: 'global', label: '🏆 월간 리그 전체 랭킹', icon: '🌍' },
                           { id: 'friends', label: '👥 실시간 친구 랭크', icon: '👦' },

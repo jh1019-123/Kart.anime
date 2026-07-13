@@ -2090,9 +2090,9 @@ export class GameEngine {
           emissiveIntensity: 0.6
         });
 
-        const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.2, 2.2), boxMat);
+        const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.6, 3.6), boxMat);
         const spawnPos = point.clone().addScaledVector(lateralDir, offset);
-        boxMesh.position.set(spawnPos.x, spawnPos.y * 0.01 + 2.0, spawnPos.z);
+        boxMesh.position.set(spawnPos.x, spawnPos.y * 0.01 + 2.5, spawnPos.z);
 
         this.scene.add(boxMesh);
         this.itemBoxes.push({
@@ -3725,7 +3725,7 @@ export class GameEngine {
 
     // Item Box collisions
     this.itemBoxes.forEach(box => {
-      if (box.active && pPos.distanceTo(box.mesh.position) < 3.2) {
+      if (box.active && pPos.distanceTo(box.mesh.position) < 4.5) {
         box.active = false;
         box.mesh.visible = false;
         box.respawnTimer = 300;
@@ -3735,7 +3735,7 @@ export class GameEngine {
 
       // AI item box acquisition (only in item mode)
       if (this.gameMode === 'item' && box.active && this.aiKart && this.aiKart.mesh) {
-        if (this.aiKart.mesh.position.distanceTo(box.mesh.position) < 3.2) {
+        if (this.aiKart.mesh.position.distanceTo(box.mesh.position) < 4.5) {
           box.active = false;
           box.mesh.visible = false;
           box.respawnTimer = 300;

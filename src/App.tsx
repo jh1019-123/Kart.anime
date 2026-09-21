@@ -380,9 +380,59 @@ export default function App() {
     }
   });
 
-  const [rankingsSubTab, setRankingsSubTab] = useState<'profile' | 'leaderboard' | 'achievements'>('profile');
+  const [rankingsSubTab, setRankingsSubTab] = useState<'profile' | 'leaderboard' | 'map_rankings' | 'achievements'>('profile');
   const [rankingFilter, setRankingFilter] = useState<'global' | 'friends' | 'time_attack' | 'season'>('global');
+  const [leaderboardMapId, setLeaderboardMapId] = useState<string>(selectedMapId || 'neon_sky_way');
   const [crashCountThisRace, setCrashCountThisRace] = useState<number>(0);
+  const [rivalCountdown, setRivalCountdown] = useState<number | null>(null);
+  const [kartSelectAnim, setKartSelectAnim] = useState<string | null>(null);
+
+  // Profile Frames System (Lv.10 Best Player, Lv.20 God's Blessing)
+  const [selectedFrame, setSelectedFrame] = useState<string>(() => {
+    return localStorage.getItem('anime_selected_frame') || 'default';
+  });
+  const [unlockedFrames, setUnlockedFrames] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('anime_unlocked_frames');
+      const list: string[] = saved ? JSON.parse(saved) : ['default'];
+      const curLvl = parseInt(localStorage.getItem('anime_level') || '1', 10);
+      if (curLvl >= 10 && !list.includes('best_player')) list.push('best_player');
+      if (curLvl >= 20 && !list.includes('divine_grace')) list.push('divine_grace');
+      return list;
+    } catch (e) {
+      return ['default'];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('anime_selected_frame', selectedFrame);
+  }, [selectedFrame]);
+
+  useEffect(() => {
+    localStorage.setItem('anime_unlocked_frames', JSON.stringify(unlockedFrames));
+  }, [unlockedFrames]);
+
+  useEffect(() => {
+    if (level >= 10 && !unlockedFrames.includes('best_player')) {
+      setUnlockedFrames(prev => [...prev, 'best_player']);
+    }
+    if (level >= 20 && !unlockedFrames.includes('divine_grace')) {
+      setUnlockedFrames(prev => [...prev, 'divine_grace']);
+    }
+  }, [level]);
+
+  const handleKartSelect = (kartId: string) => {
+    triggerAudioInit();
+    setSelectedKartId(kartId);
+    AudioEngine.playKartSelected();
+    setKartSelectAnim(kartId);
+    triggerComicTextPop('READY!', '#06b6d4');
+    const targetKart = KARTS.find(k => k.id === kartId);
+    showHUDNotification('카트 탑승 완료', `[${targetKart?.name || '카트'}] 기체에 탑승했습니다!`);
+    setTimeout(() => {
+      setKartSelectAnim(prev => prev === kartId ? null : prev);
+    }, 1400);
+  };
 
   const [achievements, setAchievements] = useState<Array<{
     id: string;
@@ -603,6 +653,7 @@ export default function App() {
 
   useEffect(() => {
     localStorage.setItem('anime_selected_map', selectedMapId);
+    setLeaderboardMapId(selectedMapId);
     if (netManagerRef.current && netRole === 'host') {
       netManagerRef.current.hostSyncLobbyState(selectedMapId, gameMode);
     }
@@ -1405,6 +1456,9 @@ export default function App() {
             engineRef.current.onHUDNotification = (title: string, body: string) => {
               showHUDNotification(title, body);
             };
+            engineRef.current.onRivalCountdownChange = (sec: number | null) => {
+              setRivalCountdown(sec);
+            };
             engineRef.current.activateEngine();
             
             if (AudioEngine.ctx) {
@@ -1477,6 +1531,28 @@ export default function App() {
     }
     setLevel(finalLvl);
     setXp(finalXp);
+
+    // Check level-based frame rewards (Lv.10 Best Player, Lv.20 God's Blessing)
+    if (finalLvl >= 10 && !unlockedFrames.includes('best_player')) {
+      setUnlockedFrames(prev => {
+        if (prev.includes('best_player')) return prev;
+        const next = [...prev, 'best_player'];
+        localStorage.setItem('anime_unlocked_frames', JSON.stringify(next));
+        return next;
+      });
+      showHUDNotification('🎉 프레임 보상 지급!', '레벨 10 달성 기념: [베스트 플레이어 프레임]이 지급되었습니다!');
+      triggerComicTextPop('FRAME UNLOCKED!', '#fbbf24');
+    }
+    if (finalLvl >= 20 && !unlockedFrames.includes('divine_grace')) {
+      setUnlockedFrames(prev => {
+        if (prev.includes('divine_grace')) return prev;
+        const next = [...prev, 'divine_grace'];
+        localStorage.setItem('anime_unlocked_frames', JSON.stringify(next));
+        return next;
+      });
+      showHUDNotification('✨ 최고위 프레임 획득!', '레벨 20 달성 기념: [신의 가호 프레임]이 지급되었습니다!');
+      triggerComicTextPop('DIVINE FRAME!', '#c084fc');
+    }
 
     const finalDrifts = engineRef.current ? engineRef.current.driftCount : 0;
     const finalBoosters = engineRef.current ? engineRef.current.boostersUsed : 0;
@@ -1810,6 +1886,7 @@ export default function App() {
     });
 
     setGold(prev => prev + finalGoldAwarded);
+    setRivalCountdown(null);
     setGameState('finished');
 
     if (isMultiplayerActive && netManagerRef.current && netRole === 'client') {
@@ -1876,7 +1953,8 @@ export default function App() {
             mapName: playerRec.mapName,
             gameMode: playerRec.gameMode,
             kartName: playerRec.kartName,
-            finalTimeMs: playerRec.finalTimeMs
+            finalTimeMs: playerRec.finalTimeMs,
+            isPlayer: true
           }).then(success => {
             if (success) {
               // Reload leaderboard from Supabase to show real live listings
@@ -1936,6 +2014,8 @@ export default function App() {
           const next = prev - 1;
           if (engineRef.current) {
             engineRef.current.boosterStock = next;
+            engineRef.current.boosterGauge = 0;
+            engineRef.current.onBoosterGaugeChange(0);
             engineRef.current.activateBooster();
           }
           return next;
@@ -1989,6 +2069,7 @@ export default function App() {
 
   const quitRace = () => {
     triggerAudioInit();
+    setRivalCountdown(null);
     keysPressedRef.current = {};
     if (engineRef.current) {
       engineRef.current.cleanup();
@@ -2375,17 +2456,37 @@ export default function App() {
                 <span className="uppercase text-white font-mono">{controlMode === 'keyboard' ? 'PC 키보드 모드' : '모바일 터치 모드'}</span>
               </button>
 
-              {/* Prestigious Pilot Pass License Card */}
-              <div className="flex items-stretch bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-amber-500/30 p-2.5 rounded-2xl shadow-[0_4px_20px_rgba(245,158,11,0.15)] space-x-3.5 hover:border-amber-400/50 transition-all duration-300">
+              {/* Prestigious Pilot Pass License Card with Equipped Frame */}
+              <div 
+                onClick={() => { triggerAudioInit(); setActiveMenuTab('rankings'); setRankingsSubTab('profile'); }}
+                className={`flex items-stretch p-2.5 rounded-2xl transition-all duration-300 space-x-3.5 relative cursor-pointer ${
+                  selectedFrame === 'best_player'
+                    ? 'bg-gradient-to-r from-amber-950/70 via-slate-900 to-amber-950/70 border-2 border-amber-400 shadow-[0_0_20px_rgba(251,191,36,0.45)] ring-2 ring-amber-400/40'
+                    : selectedFrame === 'divine_grace'
+                      ? 'bg-gradient-to-r from-indigo-950/70 via-purple-950/70 to-cyan-950/70 border-2 border-cyan-300 shadow-[0_0_25px_rgba(34,211,238,0.55),0_0_35px_rgba(192,132,252,0.45)] ring-2 ring-fuchsia-400/40 animate-pulse'
+                      : 'bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 border border-amber-500/30 hover:border-amber-400/50 shadow-[0_4px_20px_rgba(245,158,11,0.15)]'
+                }`}
+                title="프로필 & 프레임 커스터마이징 열기"
+              >
                 <div className="flex flex-col justify-between items-center rounded-xl bg-gradient-to-tr from-amber-600 via-yellow-500 to-amber-500 p-2 text-slate-950 font-black text-center min-w-[55px] shadow-lg border border-yellow-400/30">
                   <span className="text-[7.5px] uppercase opacity-80 font-mono tracking-wider">LEVEL</span>
                   <span className="text-lg leading-none mt-0.5 font-display">{level}</span>
                   <span className="text-[7.5px] bg-slate-950/20 px-1 py-0.5 rounded mt-1.5 font-mono">{Math.floor((xp / (level * 120)) * 100)}%</span>
                 </div>
                 <div className="text-left font-mono flex flex-col justify-center">
-                  <div className="text-[8.5px] text-pink-400 font-extrabold flex items-center space-x-1.5 mb-1 select-none">
+                  <div className="text-[8.5px] text-pink-400 font-extrabold flex flex-wrap items-center gap-1 mb-1 select-none">
                     <span className="bg-pink-500/10 border border-pink-500/20 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(236,72,153,0.05)]">🏷️ {selectedTitle}</span>
                     <span className="bg-violet-500/15 border border-violet-500/20 text-violet-400 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(139,92,246,0.05)]">{getTierInfo(rankPoints).icon} {getTierInfo(rankPoints).name}</span>
+                    {selectedFrame === 'best_player' && (
+                      <span className="bg-amber-400/20 border border-amber-400/40 text-amber-300 text-[8px] font-black px-1.5 py-0.5 rounded font-mono shadow-[0_0_8px_rgba(251,191,36,0.3)]">
+                        👑 베스트 플레이어
+                      </span>
+                    )}
+                    {selectedFrame === 'divine_grace' && (
+                      <span className="bg-cyan-400/20 border border-cyan-400/40 text-cyan-300 text-[8px] font-black px-1.5 py-0.5 rounded font-mono shadow-[0_0_8px_rgba(34,211,238,0.3)]">
+                        🕊️ 신의 가호
+                      </span>
+                    )}
                   </div>
                   <div className="text-[11px] text-gray-200 font-bold uppercase flex items-center">
                     <User size={11} className="mr-1.5 text-amber-400" />
@@ -2550,10 +2651,29 @@ export default function App() {
               </div>
 
               {/* === CENTER COLUMN: THE BEAUTIFUL 3D DIAGONAL QUARTER-VIEW KART (Column span: 5) === */}
-              <div className="lg:col-span-5 bg-gradient-to-b from-slate-950/60 to-slate-900/60 border-2 border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col justify-between items-center relative overflow-hidden group">
+              <div className={`lg:col-span-5 bg-gradient-to-b from-slate-950/70 to-slate-900/70 border-2 rounded-3xl p-5 shadow-2xl flex flex-col justify-between items-center relative overflow-hidden group transition-all duration-300 ${
+                kartSelectAnim === currentKart.id
+                  ? 'border-cyan-400 shadow-[0_0_35px_rgba(6,182,212,0.7)] ring-4 ring-cyan-400/40 scale-[1.02]'
+                  : 'border-slate-800'
+              }`}>
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.06)_0%,transparent_70%)] pointer-events-none" />
                 <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-pink-500/5 filter blur-3xl pointer-events-none" />
                 
+                {/* Dedicated Kart Selection Visual Animation Overlay */}
+                {kartSelectAnim === currentKart.id && (
+                  <div className="absolute inset-0 z-30 pointer-events-none flex flex-col items-center justify-center bg-cyan-950/40 backdrop-blur-[2px] animate-fadeIn">
+                    <div className="flex flex-col items-center space-y-2 animate-bounce">
+                      <div className="px-4 py-1.5 rounded-full bg-slate-950/95 border-2 border-cyan-400 text-cyan-300 font-black text-xs font-mono shadow-[0_0_25px_rgba(6,182,212,0.95)] tracking-wider flex items-center space-x-2">
+                        <Sparkles size={14} className="text-yellow-400 animate-spin" />
+                        <span>카트 선택 완료! (READY)</span>
+                      </div>
+                      <span className="text-[11px] text-yellow-300 font-mono font-black drop-shadow-[0_0_10px_rgba(253,224,71,0.9)]">
+                        🚀 탑승 기체 동조 완료!
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="w-full text-center z-10">
                   <span className="text-[8px] font-black uppercase tracking-widest text-[#06b6d4] bg-cyan-950/30 border border-cyan-500/20 px-2.5 py-0.5 rounded-full">
                     🏁 SELECTED KART MODEL
@@ -2570,7 +2690,11 @@ export default function App() {
                 </div>
 
                 {/* SLEEK ISOMETRIC 3D INTERACTIVE VISUAL CANVAS */}
-                <div className="relative w-64 h-44 flex items-center justify-center z-10 my-2 select-none group-hover:scale-105 transition-all duration-500">
+                <div 
+                  onClick={() => handleKartSelect(currentKart.id)}
+                  className="relative w-64 h-44 flex items-center justify-center z-10 my-2 select-none group-hover:scale-105 transition-all duration-500 cursor-pointer"
+                  title="클릭하여 카트 탑승 및 효과음 재생"
+                >
                   <div className="absolute bottom-[5px] w-48 h-10 bg-cyan-500/10 border border-cyan-500/30 rounded-full filter blur-sm transform -rotate-12 animate-pulse" />
                   
                   {/* Cyber grid circle */}
@@ -2647,7 +2771,7 @@ export default function App() {
                         const curIdx = ownedKarts.findIndex(k => k.id === selectedKartId);
                         const activeIdx = curIdx >= 0 ? curIdx : 0;
                         const prevIdx = (activeIdx - 1 + ownedKarts.length) % ownedKarts.length;
-                        setSelectedKartId(ownedKarts[prevIdx].id);
+                        handleKartSelect(ownedKarts[prevIdx].id);
                       }
                     }}
                     className="p-1 px-2.5 bg-slate-950 border border-slate-800 hover:border-cyan-400 rounded-lg text-[9.5px] font-black text-gray-300 hover:text-white cursor-pointer transition-colors"
@@ -2663,7 +2787,7 @@ export default function App() {
                         const curIdx = ownedKarts.findIndex(k => k.id === selectedKartId);
                         const activeIdx = curIdx >= 0 ? curIdx : 0;
                         const nextIdx = (activeIdx + 1) % ownedKarts.length;
-                        setSelectedKartId(ownedKarts[nextIdx].id);
+                        handleKartSelect(ownedKarts[nextIdx].id);
                       }
                     }}
                     className="p-1 px-2.5 bg-slate-950 border border-slate-800 hover:border-cyan-400 rounded-lg text-[9.5px] font-black text-gray-300 hover:text-white cursor-pointer transition-colors"
@@ -2671,6 +2795,20 @@ export default function App() {
                     NEXT ▶
                   </button>
                 </div>
+
+                {/* Direct Kart Selection Action Button */}
+                <button
+                  type="button"
+                  onClick={() => handleKartSelect(currentKart.id)}
+                  className={`w-full max-w-[240px] my-1.5 py-1.5 px-3 rounded-xl font-black text-[11px] flex items-center justify-center space-x-1.5 cursor-pointer transition-all duration-300 shadow-md ${
+                    kartSelectAnim === currentKart.id
+                      ? 'bg-gradient-to-r from-cyan-400 to-indigo-500 text-slate-950 shadow-[0_0_20px_rgba(6,182,212,0.85)] scale-105'
+                      : 'bg-gradient-to-r from-cyan-500/20 via-indigo-500/20 to-pink-500/20 hover:from-cyan-500/35 hover:to-indigo-500/35 border border-cyan-400/40 text-cyan-300 hover:text-white'
+                  }`}
+                >
+                  <Sparkles size={13} className="text-yellow-400" />
+                  <span>{kartSelectAnim === currentKart.id ? '선택 완료! (READY)' : '✨ 이 카트로 출전 / 탑승'}</span>
+                </button>
 
                 {/* Stats indicators */}
                 <div className="w-full z-10 grid grid-cols-4 gap-1 pb-1 pt-2.5 text-center border-t border-white/5 font-mono">
@@ -2895,20 +3033,22 @@ export default function App() {
                           {KARTS.map((k) => {
                             const isUnlocked = unlockedKarts.includes(k.id);
                             const isEquipped = selectedKartId === k.id;
+                            const isJustSelected = kartSelectAnim === k.id;
                             return (
                               <button
                                 key={k.id}
                                 disabled={!isUnlocked}
                                 onClick={() => {
-                                  triggerAudioInit();
-                                  setSelectedKartId(k.id);
+                                  handleKartSelect(k.id);
                                 }}
                                 className={`p-3 rounded-2xl border text-left cursor-pointer transition-all duration-300 flex flex-col justify-between min-h-[90px] relative overflow-hidden ${
                                   !isUnlocked 
                                     ? 'opacity-35 bg-slate-950/90 border-slate-900 cursor-not-allowed' 
-                                    : isEquipped 
-                                      ? 'bg-gradient-to-br from-pink-950/30 to-slate-950 border-pink-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.25)]' 
-                                      : 'bg-slate-900/60 border-slate-850 hover:border-slate-700 hover:bg-slate-900'
+                                    : isJustSelected
+                                      ? 'bg-gradient-to-br from-cyan-950/50 to-slate-950 border-cyan-400 text-white shadow-[0_0_20px_rgba(6,182,212,0.6)] ring-2 ring-cyan-400 scale-[1.02]'
+                                      : isEquipped 
+                                        ? 'bg-gradient-to-br from-pink-950/30 to-slate-950 border-pink-500 text-white shadow-[0_0_15px_rgba(244,63,94,0.25)]' 
+                                        : 'bg-slate-900/60 border-slate-850 hover:border-slate-700 hover:bg-slate-900'
                                 }`}
                               >
                                 <div className="flex justify-between items-start w-full">
@@ -4969,6 +5109,17 @@ export default function App() {
                       <span>내 정보 & 가죽 커스터마이징</span>
                     </button>
                     <button
+                      onClick={() => { triggerAudioInit(); setRankingsSubTab('map_rankings'); }}
+                      className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+                        rankingsSubTab === 'map_rankings'
+                          ? 'bg-violet-600 text-white shadow-lg shadow-violet-600/20'
+                          : 'text-gray-400 hover:text-white hover:bg-slate-800/50'
+                      }`}
+                    >
+                      <span>🗺️</span>
+                      <span>맵별 랭킹 순위표</span>
+                    </button>
+                    <button
                       onClick={() => { triggerAudioInit(); setRankingsSubTab('leaderboard'); }}
                       className={`px-4 py-2 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
                         rankingsSubTab === 'leaderboard'
@@ -5003,13 +5154,29 @@ export default function App() {
                       <div className="md:col-span-4 bg-slate-950/70 p-5 rounded-2xl border border-slate-800 flex flex-col justify-between">
                         <div>
                           <div className="flex items-center space-x-3 mb-4">
-                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-pink-500 flex items-center justify-center text-white text-xl font-black shadow-md border border-white/10">
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-white text-xl font-black shadow-md border transition-all ${
+                              selectedFrame === 'best_player'
+                                ? 'bg-gradient-to-br from-amber-500 via-yellow-500 to-amber-600 border-2 border-amber-300 ring-2 ring-amber-400/50 shadow-[0_0_15px_rgba(251,191,36,0.6)] text-slate-950'
+                                : selectedFrame === 'divine_grace'
+                                  ? 'bg-gradient-to-br from-cyan-400 via-indigo-500 to-fuchsia-500 border-2 border-cyan-200 ring-2 ring-fuchsia-400/50 shadow-[0_0_20px_rgba(34,211,238,0.7)] animate-pulse'
+                                  : 'bg-gradient-to-br from-indigo-500 to-pink-500 border-white/10'
+                            }`}>
                               {playerNameInput.slice(0, 1) || 'R'}
                             </div>
                             <div>
                               <div className="flex items-center space-x-1">
                                 <span className="bg-indigo-600/30 text-indigo-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-indigo-500/20 uppercase">LV.{level}</span>
                                 <span className="bg-violet-600/30 text-violet-400 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-violet-500/25">{getTierInfo(rankPoints).icon} {getTierInfo(rankPoints).name}</span>
+                                {selectedFrame === 'best_player' && (
+                                  <span className="bg-amber-400/20 text-amber-300 text-[8px] font-black px-1.5 py-0.5 rounded border border-amber-400/30 font-mono">
+                                    👑 베스트
+                                  </span>
+                                )}
+                                {selectedFrame === 'divine_grace' && (
+                                  <span className="bg-cyan-400/20 text-cyan-300 text-[8px] font-black px-1.5 py-0.5 rounded border border-cyan-400/30 font-mono">
+                                    🕊️ 신의 가호
+                                  </span>
+                                )}
                               </div>
                               <h4 className="text-sm font-black text-white mt-0.5">{playerNameInput}</h4>
                             </div>
@@ -5134,8 +5301,364 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Skin customization removed */}
+                        {/* Driver Profile Frames Reward Section (Lv.10 & Lv.20) */}
+                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800">
+                          <div className="flex justify-between items-center mb-2">
+                            <h4 className="text-xs font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 uppercase tracking-widest font-mono flex items-center space-x-1.5">
+                              <span>🖼️</span>
+                              <span>드라이버 전용 프로필 프레임 보상 (Level Frames)</span>
+                            </h4>
+                            <span className="text-[9.5px] text-amber-400 font-mono font-bold">
+                              장착 중: {selectedFrame === 'best_player' ? '👑 베스트 플레이어' : selectedFrame === 'divine_grace' ? '🕊️ 신의 가호' : '기본 프레임'}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 leading-normal block mb-3 font-sans">
+                            레벨 조건을 달성하면 영구적인 전용 프로필 테두리 프레임이 수여됩니다. 장착 시 로비 라이선스 카드와 프로필에 발광 오라가 적용됩니다!
+                          </span>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            {[
+                              {
+                                id: 'default',
+                                label: '기본 프레임',
+                                req: '기본 지급',
+                                desc: '단정하고 심플한 기본 프레임 테두리',
+                                unlocked: true,
+                                borderClass: 'border-slate-800 bg-slate-900/60',
+                                badge: '⚪ DEFAULT'
+                              },
+                              {
+                                id: 'best_player',
+                                label: '베스트 플레이어 프레임',
+                                req: '레벨 10 이상 달성',
+                                desc: '황금빛 챔피언과 승자의 찬란한 광채 오라',
+                                unlocked: unlockedFrames.includes('best_player') || level >= 10,
+                                borderClass: 'border-2 border-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.5)] bg-gradient-to-r from-amber-950/40 via-yellow-950/30 to-amber-950/40',
+                                badge: '👑 BEST PLAYER (Lv.10)'
+                              },
+                              {
+                                id: 'divine_grace',
+                                label: '신의 가호 프레임',
+                                req: '레벨 20 이상 달성',
+                                desc: '천상의 빛과 네온 프리즘 불멸의 가호 오라',
+                                unlocked: unlockedFrames.includes('divine_grace') || level >= 20,
+                                borderClass: 'border-2 border-cyan-300 shadow-[0_0_20px_rgba(34,211,238,0.6),0_0_25px_rgba(192,132,252,0.4)] bg-gradient-to-r from-cyan-950/40 via-purple-950/40 to-pink-950/40 animate-pulse',
+                                badge: '🕊️ GOD\'S BLESSING (Lv.20)'
+                              }
+                            ].map((f) => {
+                              const isEquipped = selectedFrame === f.id;
+                              return (
+                                <div
+                                  key={f.id}
+                                  className={`p-3 rounded-2xl border flex flex-col justify-between transition-all ${f.borderClass} ${
+                                    isEquipped ? 'ring-2 ring-white/60 scale-[1.02]' : f.unlocked ? 'opacity-100 hover:scale-[1.01]' : 'opacity-40 grayscale'
+                                  }`}
+                                >
+                                  <div>
+                                    <div className="flex justify-between items-center mb-1">
+                                      <span className="text-[11.5px] font-black text-white">{f.label}</span>
+                                      <span className="text-[8px] font-mono text-amber-400 font-bold">{f.badge}</span>
+                                    </div>
+                                    <div className="text-[9.5px] text-gray-400 leading-snug mt-1">{f.desc}</div>
+                                    <div className="text-[9px] text-cyan-400 font-mono mt-1">해금 조건: {f.req}</div>
+                                  </div>
+
+                                  <div className="mt-3">
+                                    {isEquipped ? (
+                                      <span className="block text-center py-1 bg-white/10 text-white border border-white/20 rounded-xl text-[10px] font-black font-mono">
+                                        장착 중 (EQUIPPED)
+                                      </span>
+                                    ) : f.unlocked ? (
+                                      <button
+                                        onClick={() => {
+                                          triggerAudioInit();
+                                          setSelectedFrame(f.id);
+                                          showHUDNotification('프레임 장착 완료', `[${f.label}]을 프로필에 장착했습니다.`);
+                                          triggerComicTextPop('FRAME EQUIPPED!', '#fbbf24');
+                                        }}
+                                        className="w-full py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded-xl text-[10px] font-black transition-transform active:scale-95 cursor-pointer shadow font-mono"
+                                      >
+                                        프레임 장착하기
+                                      </button>
+                                    ) : (
+                                      <span className="block text-center py-1 bg-slate-900/80 text-slate-500 rounded-xl text-[9.5px] font-bold">
+                                        🔒 {f.req} 필요
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
+                    </div>
+                  )}
+
+                  {/* SUB-TAB: MAP-BY-MAP RANKING WINDOW (맵 별 전용 랭킹 순위표) */}
+                  {rankingsSubTab === 'map_rankings' && (
+                    <div className="flex flex-col space-y-4 font-sans text-left">
+                      {/* Top Circuit Navigation Bar */}
+                      <div className="bg-slate-950/80 p-3.5 rounded-2xl border border-slate-800">
+                        <div className="flex justify-between items-center mb-2.5">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-base">🗺️</span>
+                            <span className="text-xs font-black text-white uppercase tracking-wider">트랙 서킷별 독립 순위표 (Circuit Leaderboard)</span>
+                          </div>
+                          <span className="text-[9.5px] text-cyan-400 font-mono font-bold">
+                            전체 {MAPS.length}개 트랙 데이터베이스
+                          </span>
+                        </div>
+
+                        {/* Track Selection Pills */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                          {MAPS.map((m) => {
+                            const isSelected = leaderboardMapId === m.id;
+                            const cleanedName = m.name.split(' (')[0];
+                            const mapRecords = leaderboard.filter(r => r.mapName === cleanedName || r.mapName === m.name);
+                            const bestTime = bestTimes[m.id]?.timeStr;
+
+                            return (
+                              <button
+                                key={m.id}
+                                onClick={() => {
+                                  triggerAudioInit();
+                                  setLeaderboardMapId(m.id);
+                                }}
+                                className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                                  isSelected
+                                    ? 'bg-gradient-to-b from-cyan-950/60 to-slate-950 border-cyan-400 shadow-[0_0_15px_rgba(6,182,212,0.35)] ring-2 ring-cyan-400/30'
+                                    : 'bg-slate-900/50 border-slate-850 hover:border-slate-700 hover:bg-slate-900'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-sm">{m.icon}</span>
+                                  <span className="text-[8px] font-mono text-gray-400 bg-slate-800/80 px-1.5 py-0.5 rounded">
+                                    {mapRecords.length}기록
+                                  </span>
+                                </div>
+                                <div className="text-[11px] font-black text-white truncate">{cleanedName}</div>
+                                <div className="text-[9px] text-gray-400 truncate mt-0.5">{m.theme}</div>
+                                <div className="mt-1.5 pt-1 border-t border-white/5 flex items-center justify-between text-[8.5px] font-mono">
+                                  <span className="text-gray-500">BEST:</span>
+                                  <span className="text-yellow-400 font-bold">{bestTime || '--:--'}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Active Map Detail Banner */}
+                      {(() => {
+                        const activeMap = MAPS.find(m => m.id === leaderboardMapId) || MAPS[0];
+                        const cleanedName = activeMap.name.split(' (')[0];
+                        const filteredRecords = leaderboard
+                          .filter(r => r.mapName === cleanedName || r.mapName === activeMap.name)
+                          .sort((a, b) => (a.finalTimeMs || 999999) - (b.finalTimeMs || 999999));
+                        const personalBest = bestTimes[activeMap.id]?.timeStr;
+
+                        const top1 = filteredRecords[0];
+                        const top2 = filteredRecords[1];
+                        const top3 = filteredRecords[2];
+
+                        return (
+                          <div className="flex flex-col space-y-4">
+                            {/* Map Info Bar */}
+                            <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-slate-950 p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                              <div className="flex items-center space-x-3">
+                                <span className="text-3xl p-2 rounded-xl bg-slate-900 border border-slate-800">{activeMap.icon}</span>
+                                <div>
+                                  <div className="flex items-center space-x-2">
+                                    <h3 className="text-base font-black text-white">{cleanedName}</h3>
+                                    <span className="text-[9px] bg-cyan-950 text-cyan-400 border border-cyan-800/40 px-2 py-0.5 rounded font-mono font-bold">
+                                      {activeMap.difficulty} 난이도
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-gray-400 mt-0.5 font-sans">
+                                    {activeMap.desc} ⬝ {activeMap.length}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center space-x-3 bg-slate-950/80 px-4 py-2 rounded-xl border border-slate-850">
+                                <div className="text-right">
+                                  <div className="text-[9px] text-gray-400 uppercase font-mono font-bold">내 최고 기록 (Personal Best)</div>
+                                  <div className="text-sm font-black text-yellow-400 font-mono">{personalBest || '기록 없음'}</div>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    triggerAudioInit();
+                                    setSelectedMapId(activeMap.id);
+                                    setActiveMenuTab(null);
+                                    startGame();
+                                  }}
+                                  className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-lg cursor-pointer transition-all active:scale-95"
+                                >
+                                  🏁 이 트랙 레이싱
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Top 3 Podium Cards */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                              {/* 1st Place - Gold */}
+                              <div className={`p-3.5 rounded-2xl border flex flex-col justify-between relative overflow-hidden ${
+                                top1 
+                                  ? 'bg-gradient-to-b from-amber-950/40 via-slate-950 to-slate-950 border-amber-400/80 shadow-[0_0_20px_rgba(251,191,36,0.3)]' 
+                                  : 'bg-slate-950/50 border-slate-850 opacity-60'
+                              }`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xl">👑</span>
+                                  <span className="text-[9px] font-black text-amber-400 bg-amber-950/60 border border-amber-400/40 px-2 py-0.5 rounded-full font-mono uppercase">
+                                    1st CHAMPION
+                                  </span>
+                                </div>
+                                {top1 ? (
+                                  <div>
+                                    <div className="text-sm font-black text-white truncate flex items-center space-x-1.5">
+                                      <span>{top1.playerName}</span>
+                                      {top1.isPlayer && (
+                                        <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-mono font-bold">YOU</span>
+                                      )}
+                                    </div>
+                                    <div className="text-[9.5px] text-gray-400 font-mono mt-0.5">{top1.kartName.split(' (')[0]}</div>
+                                    <div className="mt-2 text-base font-black text-amber-300 font-mono">{top1.finalTimeStr}</div>
+                                    <div className="text-[8.5px] text-gray-500 font-mono mt-0.5">{top1.date}</div>
+                                  </div>
+                                ) : (
+                                  <div className="py-4 text-center text-xs text-gray-500 font-mono">기록 미등록</div>
+                                )}
+                              </div>
+
+                              {/* 2nd Place - Silver */}
+                              <div className={`p-3.5 rounded-2xl border flex flex-col justify-between relative overflow-hidden ${
+                                top2 
+                                  ? 'bg-gradient-to-b from-slate-800/40 via-slate-950 to-slate-950 border-slate-400/70 shadow-[0_0_15px_rgba(148,163,184,0.2)]' 
+                                  : 'bg-slate-950/50 border-slate-850 opacity-60'
+                              }`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xl">🥈</span>
+                                  <span className="text-[9px] font-black text-slate-300 bg-slate-800/60 border border-slate-400/40 px-2 py-0.5 rounded-full font-mono uppercase">
+                                    2nd RUNNER-UP
+                                  </span>
+                                </div>
+                                {top2 ? (
+                                  <div>
+                                    <div className="text-sm font-black text-white truncate flex items-center space-x-1.5">
+                                      <span>{top2.playerName}</span>
+                                      {top2.isPlayer && (
+                                        <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-mono font-bold">YOU</span>
+                                      )}
+                                    </div>
+                                    <div className="text-[9.5px] text-gray-400 font-mono mt-0.5">{top2.kartName.split(' (')[0]}</div>
+                                    <div className="mt-2 text-base font-black text-slate-200 font-mono">{top2.finalTimeStr}</div>
+                                    <div className="text-[8.5px] text-gray-500 font-mono mt-0.5">{top2.date}</div>
+                                  </div>
+                                ) : (
+                                  <div className="py-4 text-center text-xs text-gray-500 font-mono">기록 미등록</div>
+                                )}
+                              </div>
+
+                              {/* 3rd Place - Bronze */}
+                              <div className={`p-3.5 rounded-2xl border flex flex-col justify-between relative overflow-hidden ${
+                                top3 
+                                  ? 'bg-gradient-to-b from-amber-900/30 via-slate-950 to-slate-950 border-amber-600/60 shadow-[0_0_15px_rgba(217,119,6,0.2)]' 
+                                  : 'bg-slate-950/50 border-slate-850 opacity-60'
+                              }`}>
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-xl">🥉</span>
+                                  <span className="text-[9px] font-black text-amber-500 bg-amber-950/50 border border-amber-600/40 px-2 py-0.5 rounded-full font-mono uppercase">
+                                    3rd BRONZE
+                                  </span>
+                                </div>
+                                {top3 ? (
+                                  <div>
+                                    <div className="text-sm font-black text-white truncate flex items-center space-x-1.5">
+                                      <span>{top3.playerName}</span>
+                                      {top3.isPlayer && (
+                                        <span className="text-[8px] bg-cyan-500/20 text-cyan-300 px-1.5 py-0.2 rounded font-mono font-bold">YOU</span>
+                                      )}
+                                    </div>
+                                    <div className="text-[9.5px] text-gray-400 font-mono mt-0.5">{top3.kartName.split(' (')[0]}</div>
+                                    <div className="mt-2 text-base font-black text-amber-400 font-mono">{top3.finalTimeStr}</div>
+                                    <div className="text-[8.5px] text-gray-500 font-mono mt-0.5">{top3.date}</div>
+                                  </div>
+                                ) : (
+                                  <div className="py-4 text-center text-xs text-gray-500 font-mono">기록 미등록</div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Full Track Ranking Table */}
+                            <div className="bg-slate-950/70 rounded-2xl border border-slate-800 overflow-hidden font-mono">
+                              <div className="p-3 border-b border-white/5 flex justify-between items-center bg-slate-900/50">
+                                <span className="text-xs font-black text-gray-200">
+                                  📋 [{cleanedName}] 전체 랭커 순위 리스트 ({filteredRecords.length}명)
+                                </span>
+                                <span className="text-[9px] text-gray-400">
+                                  빠른 랩 타임 순 정렬
+                                </span>
+                              </div>
+
+                              {filteredRecords.length === 0 ? (
+                                <div className="py-12 text-center text-gray-400 flex flex-col items-center justify-center space-y-2">
+                                  <span className="text-3xl">🏁</span>
+                                  <span className="text-xs font-sans">아직 이 트랙의 주행 완주 기록이 없습니다.</span>
+                                  <span className="text-[10px] text-gray-500 font-sans">첫 번째 챔피언으로 명예의 전당 1위를 차지해 보세요!</span>
+                                </div>
+                              ) : (
+                                <div className="divide-y divide-slate-850/60 max-h-[360px] overflow-y-auto normal-scrollbar">
+                                  {filteredRecords.map((item, idx) => {
+                                    const rankNum = idx + 1;
+                                    return (
+                                      <div
+                                        key={item.id || idx}
+                                        className={`p-3 flex items-center justify-between hover:bg-slate-900/40 transition-colors ${
+                                          item.isPlayer ? 'bg-cyan-950/20 border-l-2 border-cyan-400' : ''
+                                        }`}
+                                      >
+                                        <div className="flex items-center space-x-3">
+                                          <div className={`w-7 h-7 rounded-xl flex items-center justify-center text-xs font-black shrink-0 ${
+                                            rankNum === 1
+                                              ? 'bg-amber-400 text-slate-950 font-black shadow-[0_0_8px_rgba(251,191,36,0.6)]'
+                                              : rankNum === 2
+                                                ? 'bg-slate-300 text-slate-950 font-black'
+                                                : rankNum === 3
+                                                  ? 'bg-amber-600 text-slate-950 font-black'
+                                                  : 'bg-slate-900 text-gray-400 border border-slate-800'
+                                          }`}>
+                                            {rankNum}
+                                          </div>
+                                          <div>
+                                            <div className="flex items-center space-x-1.5">
+                                              <span className="text-xs font-black text-white font-sans">{item.playerName}</span>
+                                              {item.isPlayer && (
+                                                <span className="text-[8px] bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 px-1.5 py-0.2 rounded font-mono font-bold">
+                                                  나의 기록
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-[9px] text-gray-400 font-mono mt-0.5">
+                                              기체: {item.kartName.split(' (')[0]} ⬝ {item.date}
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center space-x-2">
+                                          <div className="bg-slate-950 px-3 py-1 rounded-xl border border-slate-800 text-cyan-400 font-black text-xs">
+                                            {item.finalTimeStr}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
@@ -5358,18 +5881,57 @@ CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHEC
                       )}
 
                       {rankingFilter === 'time_attack' && (
-                        <div className="bg-slate-950/70 p-4 rounded-xl border border-slate-800 font-sans">
-                          <div className="flex justify-between items-center border-b border-white/5 pb-2 mb-3.5">
-                            <span className="text-[11px] text-cyan-400 font-extrabold uppercase tracking-wide font-mono">MAP TIME ATTACK RECORDS ([{currentMap.name.split(' (')[0]}] 트랙 랭킹)</span>
-                            <span className="text-[9.5px] text-gray-500 font-bold">소속 서킷의 실제 완주 상세 기록 명단</span>
+                        <div className="flex flex-col lg:flex-row gap-4 font-sans text-left">
+                          
+                          {/* Left Panel: Map list selector */}
+                          <div className="lg:w-[280px] shrink-0 flex flex-col space-y-2">
+                            <span className="text-[10px] text-pink-400 font-extrabold uppercase tracking-wider pl-1">🗺️ 트랙 서킷 선택</span>
+                            <div className="flex lg:flex-col gap-2 overflow-x-auto lg:overflow-x-visible pb-2 lg:pb-0 max-h-[360px] lg:overflow-y-auto normal-scrollbar pr-1">
+                              {MAPS.map((m) => {
+                                const isSelected = leaderboardMapId === m.id;
+                                const cleanedName = m.name.split(' (')[0];
+                                
+                                // Calculate how many records exist for this map in leaderboard
+                                const mapRecordsCount = leaderboard.filter(r => r.mapName === cleanedName).length;
+                                
+                                return (
+                                  <button
+                                    key={m.id}
+                                    onClick={() => { triggerAudioInit(); setLeaderboardMapId(m.id); }}
+                                    className={`text-left p-2.5 rounded-xl border transition-all shrink-0 w-[160px] lg:w-full cursor-pointer flex flex-col justify-between ${
+                                      isSelected
+                                        ? 'bg-slate-900 border-cyan-500/80 shadow-[0_0_8px_rgba(34,211,238,0.2)]'
+                                        : 'bg-slate-950/40 border-slate-850 hover:bg-slate-900/50 hover:border-slate-800'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between w-full mb-1">
+                                      <span className={`text-[11px] font-black transition-colors ${isSelected ? 'text-cyan-400' : 'text-white'}`}>
+                                        {cleanedName}
+                                      </span>
+                                      <span className="text-[8.5px] bg-slate-900 px-1.5 py-0.2 rounded border border-white/5 text-gray-400 font-mono">
+                                        {m.difficulty}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center justify-between text-[9px] text-gray-500">
+                                      <span>기록: <span className="text-gray-300 font-bold">{mapRecordsCount}개</span></span>
+                                      {bestTimes[m.id]?.timeStr && (
+                                        <span className="text-yellow-400/90 font-mono font-bold text-[9px]">{bestTimes[m.id].timeStr}</span>
+                                      )}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto normal-scrollbar pr-1">
+                          {/* Right Panel: Selected Map Rankings list */}
+                          <div className="flex-1 bg-slate-950/70 p-4 rounded-2xl border border-slate-800 flex flex-col min-h-[300px]">
                             {(() => {
-                              const currMapNameClean = currentMap.name.split(' (')[0];
+                              const targetMap = MAPS.find(m => m.id === leaderboardMapId) || MAPS[0];
+                              const targetMapNameClean = targetMap.name.split(' (')[0];
                               const uniqueMapPlayers: Record<string, typeof leaderboard[0]> = {};
                               leaderboard
-                                .filter(r => r.mapName === currMapNameClean)
+                                .filter(r => r.mapName === targetMapNameClean)
                                 .forEach(r => {
                                   if (!uniqueMapPlayers[r.playerName] || r.finalTimeMs < uniqueMapPlayers[r.playerName].finalTimeMs) {
                                     uniqueMapPlayers[r.playerName] = r;
@@ -5377,34 +5939,64 @@ CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHEC
                                 });
                               const records = Object.values(uniqueMapPlayers).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
 
-                              if (records.length === 0) {
-                                return (
-                                  <div className="col-span-2 text-center py-10 text-gray-500 text-xs font-medium">
-                                    🏁 현재 [{currMapNameClean}] 서킷에 기록된 실제 주행 데이터가 없습니다.<br />
-                                    지금 이 트랙에서 첫 광속 드리프트를 시작해보세요!
-                                  </div>
-                                );
-                              }
-
-                              return records.map((item, idx) => {
-                                return (
-                                  <div 
-                                    key={item.id}
-                                    className="flex justify-between items-center p-3 rounded-xl border border-pink-500/20 bg-pink-955/10"
-                                  >
-                                    <div className="flex items-center space-x-2">
-                                      <span className="text-gray-500 font-bold font-mono text-xs w-4">{idx + 1}</span>
-                                      <div>
-                                        <div className="text-white text-xs font-black">{item.playerName}</div>
-                                        <div className="text-[8.5px] text-gray-500 font-mono">{item.date} ⬝ 기체: {item.kartName.split(' (')[0]}</div>
+                              return (
+                                <>
+                                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-white/5 pb-2.5 mb-3.5 gap-2">
+                                    <div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-sm">🏁</span>
+                                        <span className="text-xs font-black text-cyan-400 font-mono tracking-wide uppercase">
+                                          {targetMap.name}
+                                        </span>
                                       </div>
+                                      <p className="text-[9.5px] text-gray-400 font-medium mt-0.5 leading-normal max-w-lg">
+                                        {targetMap.description}
+                                      </p>
                                     </div>
-                                    <p className="text-xs font-mono font-black text-indigo-400 bg-indigo-950/30 px-2.5 py-1 rounded border border-indigo-500/25 animate-pulse">
-                                      {item.finalTimeStr}
-                                    </p>
+                                    <div className="shrink-0 flex items-center space-x-1.5 bg-slate-900 px-2.5 py-1 border border-slate-800 rounded-lg text-[9px] text-gray-400 font-bold font-mono">
+                                      <span>난이도: {targetMap.difficulty}</span>
+                                    </div>
                                   </div>
-                                );
-                              });
+
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[280px] overflow-y-auto normal-scrollbar pr-1">
+                                    {records.length === 0 ? (
+                                      <div className="col-span-2 text-center py-12 text-gray-500 text-xs font-medium leading-relaxed">
+                                        🏁 현재 [{targetMapNameClean}] 서킷에 기록된 실제 주행 데이터가 없습니다.<br />
+                                        메인 화면에서 이 맵을 고르고 첫 광속 드리프트를 시작해보세요!
+                                      </div>
+                                    ) : (
+                                      records.map((item, idx) => {
+                                        const updatedIndex = idx + 1;
+                                        const medalColor = updatedIndex === 1 ? 'bg-amber-400 text-slate-950 animate-pulse font-black' : updatedIndex === 2 ? 'bg-slate-300 text-slate-950 font-black' : updatedIndex === 3 ? 'bg-amber-600 text-slate-950 font-black' : 'bg-slate-855 bg-slate-800 text-gray-400';
+                                        return (
+                                          <div 
+                                            key={item.id}
+                                            className="flex justify-between items-center p-3 rounded-xl border border-pink-500/10 bg-pink-955/5 hover:border-pink-500/30 transition-colors"
+                                          >
+                                            <div className="flex items-center space-x-2.5">
+                                              <div className={`w-5.5 h-5.5 rounded ${medalColor} flex items-center justify-center text-[10.5px] font-mono shadow-sm`}>
+                                                {updatedIndex}
+                                              </div>
+                                              <div>
+                                                <div className="text-white text-xs font-black flex items-center space-x-1.5">
+                                                  <span>{item.playerName}</span>
+                                                  {item.isPlayer && (
+                                                    <span className="text-[8px] bg-cyan-500/10 border border-cyan-500/35 text-cyan-400 px-1 rounded font-bold">Player</span>
+                                                  )}
+                                                </div>
+                                                <div className="text-[8.5px] text-gray-500 font-mono mt-0.5">{item.date} ⬝ 기체: {item.kartName.split(' (')[0]}</div>
+                                              </div>
+                                            </div>
+                                            <p className="text-xs font-mono font-black text-indigo-400 bg-indigo-950/30 px-2.5 py-1 rounded border border-indigo-500/25 animate-pulse">
+                                              {item.finalTimeStr}
+                                            </p>
+                                          </div>
+                                        );
+                                      })
+                                    )}
+                                  </div>
+                                </>
+                              );
                             })()}
                           </div>
                         </div>
@@ -5975,11 +6567,34 @@ CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHEC
             {/* Center: Centered Booster Gauge and Dedicated Boost Icon (usable in keyboard mode too) */}
             {gameMode !== 'item' && (
               <div className="flex flex-col items-center justify-center pointer-events-auto z-10 w-full max-w-[280px] sm:max-w-xs px-4 bg-black/90 backdrop-blur-md border-2 border-pink-500 p-2.5 rounded-2xl shadow-xl font-mono">
-                <div className="w-full flex justify-between items-center mb-1 text-center">
+                <div className="w-full flex justify-between items-center mb-1.5 text-center">
                   <span className="text-[9px] text-pink-400 font-black tracking-widest">⚡ NITRO SYSTEM</span>
-                  <span className="text-[9.5px] font-black text-white bg-pink-600/20 px-2 py-0.5 rounded border border-pink-500/30 animate-pulse">
-                    BOOST: {boosterStock}개
-                  </span>
+                  <div className="flex items-center space-x-1.5">
+                    {/* Glowing Booster Icons */}
+                    <div className="flex items-center space-x-1">
+                      {[0, 1].map((index) => {
+                        const isAvailable = boosterStock > index;
+                        return (
+                          <div
+                            key={index}
+                            className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] transition-all duration-300 ${
+                              isAvailable
+                                ? 'bg-gradient-to-tr from-cyan-400 to-indigo-500 text-white shadow-[0_0_10px_rgba(34,211,238,0.95)] border border-cyan-300 scale-105'
+                                : 'bg-slate-950 text-slate-700 border border-slate-850 opacity-40'
+                            }`}
+                            style={{
+                              boxShadow: isAvailable ? '0 0 10px rgba(34, 211, 238, 0.95), inset 0 0 4px rgba(34, 211, 238, 0.6)' : 'none'
+                            }}
+                          >
+                            🚀
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <span className="text-[9.5px] font-black text-white bg-pink-600/20 px-2 py-0.5 rounded border border-pink-500/30">
+                      BOOST: {boosterStock}/2
+                    </span>
+                  </div>
                 </div>
                 
                 {/* Gauge bar */}

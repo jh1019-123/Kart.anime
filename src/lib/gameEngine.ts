@@ -222,6 +222,74 @@ export const AudioEngine = {
     }
   },
 
+  playKartSelected() {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      
+      // 1. Futuristic ascending dual-tone chime (Chime confirmation)
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain1 = this.ctx.createGain();
+      const gain2 = this.ctx.createGain();
+
+      osc1.type = 'sine';
+      osc2.type = 'triangle';
+
+      // First note: C5 (523.25) -> G5 (783.99) -> C6 (1046.50)
+      osc1.frequency.setValueAtTime(523.25, now);
+      osc1.frequency.setValueAtTime(783.99, now + 0.08);
+      osc1.frequency.exponentialRampToValueAtTime(1046.50, now + 0.18);
+
+      // Harmony note: E5 (659.25) -> B5 (987.77) -> E6 (1318.51)
+      osc2.frequency.setValueAtTime(659.25, now);
+      osc2.frequency.setValueAtTime(987.77, now + 0.08);
+      osc2.frequency.exponentialRampToValueAtTime(1318.51, now + 0.18);
+
+      gain1.gain.setValueAtTime(0, now);
+      gain1.gain.linearRampToValueAtTime(0.28, now + 0.02);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      gain2.gain.setValueAtTime(0, now);
+      gain2.gain.linearRampToValueAtTime(0.22, now + 0.02);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+      osc1.connect(gain1);
+      gain1.connect(this.ctx.destination);
+      osc2.connect(gain2);
+      gain2.connect(this.ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.6);
+      osc2.stop(now + 0.6);
+
+      // 2. Crisp mechanical latch snap
+      const snapBuf = this.ctx.createBuffer(1, this.ctx.sampleRate * 0.09, this.ctx.sampleRate);
+      const snapData = snapBuf.getChannelData(0);
+      for (let i = 0; i < snapBuf.length; i++) {
+        snapData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.015));
+      }
+      const snapNode = this.ctx.createBufferSource();
+      snapNode.buffer = snapBuf;
+      const snapFilter = this.ctx.createBiquadFilter();
+      snapFilter.type = 'bandpass';
+      snapFilter.frequency.setValueAtTime(3200, now);
+      snapFilter.Q.setValueAtTime(2.5, now);
+      const snapGain = this.ctx.createGain();
+      snapGain.gain.setValueAtTime(0.25, now);
+      snapGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+
+      snapNode.connect(snapFilter);
+      snapFilter.connect(snapGain);
+      snapGain.connect(this.ctx.destination);
+      snapNode.start(now);
+    } catch (e) {
+      console.warn("playKartSelected sound failed:", e);
+    }
+  },
+
   playBoost() {
     if (!this.ctx) return;
     try {
@@ -1008,6 +1076,54 @@ export const AudioEngine = {
     this.bgmInterval = setInterval(runScheduler, stepDuration * 1000);
   },
 
+  playKartSelected() {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+    try {
+      const now = this.ctx.currentTime;
+      // High-tech electronic double chime (F#5 -> C#6) with warm chorus
+      const freqs = [739.99, 1108.73];
+      freqs.forEach((f, i) => {
+        if (!this.ctx) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(f, now + i * 0.09);
+        gain.gain.setValueAtTime(0, now + i * 0.09);
+        gain.gain.linearRampToValueAtTime(0.08, now + i * 0.09 + 0.015);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.35);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(now + i * 0.09);
+        osc.stop(now + i * 0.09 + 0.38);
+      });
+
+      // Subtle engine throttle rev pulse to signify vehicle ready!
+      const revOsc = this.ctx.createOscillator();
+      const revGain = this.ctx.createGain();
+      const revFilter = this.ctx.createBiquadFilter();
+      revOsc.type = 'sawtooth';
+      revOsc.frequency.setValueAtTime(75, now + 0.05);
+      revOsc.frequency.exponentialRampToValueAtTime(240, now + 0.28);
+      revOsc.frequency.exponentialRampToValueAtTime(95, now + 0.55);
+
+      revFilter.type = 'lowpass';
+      revFilter.frequency.setValueAtTime(320, now + 0.05);
+      revFilter.frequency.exponentialRampToValueAtTime(1100, now + 0.28);
+      revFilter.frequency.exponentialRampToValueAtTime(280, now + 0.55);
+
+      revGain.gain.setValueAtTime(0, now + 0.05);
+      revGain.gain.linearRampToValueAtTime(0.055, now + 0.18);
+      revGain.gain.exponentialRampToValueAtTime(0.001, now + 0.58);
+
+      revOsc.connect(revFilter);
+      revFilter.connect(revGain);
+      revGain.connect(this.ctx.destination);
+      revOsc.start(now + 0.05);
+      revOsc.stop(now + 0.60);
+    } catch (e) {}
+  },
+
   stopBGM() {
     if (this.bgmInterval) {
       clearInterval(this.bgmInterval);
@@ -1101,6 +1217,7 @@ export class GameEngine {
   onCoinCollected?: () => void;
   onPaintTurfRatio?: (playerRatio: number) => void;
   onFlagScoreChange?: (playerScore: number, aiScore: number) => void;
+  onRivalCountdownChange?: (seconds: number | null) => void;
   aiFinishedTimeRemaining: number | null = null;
   aiFinishedTime: number | null = null;
 
@@ -2090,9 +2207,9 @@ export class GameEngine {
           emissiveIntensity: 0.6
         });
 
-        const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(3.6, 3.6, 3.6), boxMat);
+        const boxMesh = new THREE.Mesh(new THREE.BoxGeometry(5.4, 5.4, 5.4), boxMat);
         const spawnPos = point.clone().addScaledVector(lateralDir, offset);
-        boxMesh.position.set(spawnPos.x, spawnPos.y * 0.01 + 2.5, spawnPos.z);
+        boxMesh.position.set(spawnPos.x, spawnPos.y * 0.01 + 3.0, spawnPos.z);
 
         this.scene.add(boxMesh);
         this.itemBoxes.push({
@@ -3017,13 +3134,19 @@ export class GameEngine {
       this.aiFinishedTimeRemaining -= 0.01667;
       const currSec = Math.ceil(this.aiFinishedTimeRemaining);
       
-      if (currSec < prevSec && currSec > 0) {
-        this.onComicPopup?.(`${currSec}초!`, '#f43f5e');
-        this.onHUDNotification?.('⚠️ 남은 시간', `라이벌이 이미 골인했습니다! 완주까지 남은 시간: ${currSec}초`);
+      if (currSec !== prevSec) {
+        if (currSec > 0) {
+          this.onRivalCountdownChange?.(currSec);
+          // Play subtle tick for urgent countdown
+          AudioEngine.playShuffleTick();
+        } else {
+          this.onRivalCountdownChange?.(null);
+        }
       }
       
       if (this.aiFinishedTimeRemaining <= 0) {
         this.aiFinishedTimeRemaining = null;
+        this.onRivalCountdownChange?.(null);
         this.onGameFinished(false, this.timer);
         return;
       }
@@ -3178,34 +3301,40 @@ export class GameEngine {
         steerInput = -this.smoothedSteerRatio;
       }
 
-      const targetDriftAngle = -this.driftDirection * 0.42;
-      this.driftAngle = THREE.MathUtils.lerp(this.driftAngle, targetDriftAngle, 0.15);
+      const targetDriftAngle = -this.driftDirection * 0.54;
+      this.driftAngle = THREE.MathUtils.lerp(this.driftAngle, targetDriftAngle, 0.075);
+      // Rougher friction drag: slightly reduce speed during drift
+      this.speed *= 0.991;
 
-      // Automated drift physics slip vector:
+      // Automated drift physics slip vector: rougher grip loss and slightly slower cornering arc
       if (steerInput !== 0) {
         const steeringWithDrift = (Math.sign(steerInput) === this.driftDirection);
         if (steeringWithDrift) {
-          // Steering into the drift: turn sharper but highly controlled, scaled by steering magnitude
+          // Steering into the drift: rougher, slower bite into the corner
           const magnitude = Math.abs(steerInput);
-          angleDiff = this.driftDirection * this.turnSpeed * (1.0 + 0.5 * magnitude);
+          angleDiff = this.driftDirection * this.turnSpeed * (0.82 + 0.38 * magnitude);
         } else {
-          // Counter-steering: turns wide (reduces cornering sharpness but aligns the car, making it easy to recover)
+          // Counter-steering: heavier resistant slide
           const magnitude = Math.abs(steerInput);
-          angleDiff = -this.driftDirection * this.turnSpeed * 0.32 * magnitude;
+          angleDiff = -this.driftDirection * this.turnSpeed * 0.22 * magnitude;
         }
       } else {
-        // No input: automatic gentle slide along the curvature
-        angleDiff = this.driftDirection * this.turnSpeed * 0.65;
+        // No input: heavier rough sliding inertia along the track
+        angleDiff = this.driftDirection * this.turnSpeed * 0.50;
       }
 
-      // Charge Gauge (boost active multiplier) - doubled for high reward and ease
-      const chargeRate = (this.isSuperNitro ? 8.0 : 2.85) * driftStatsWeight;
-      this.boosterGauge += chargeRate;
-      if (this.boosterGauge >= 100) {
-        this.boosterGauge = 0;
-        this.boosterStock++;
-        this.onBoosterCountChange(this.boosterStock);
-        this.onComicPopup?.('MINI TURBO!', '#22d3ee');
+      // Charge Gauge (boost active multiplier) - significantly reduced charging rate to make charging more challenging (was 2.85)
+      const chargeRate = (this.isSuperNitro ? 3.2 : 0.95) * driftStatsWeight;
+      if (this.boosterStock < 2) {
+        this.boosterGauge += chargeRate;
+        if (this.boosterGauge >= 100) {
+          this.boosterGauge = 0;
+          this.boosterStock++;
+          this.onBoosterCountChange(this.boosterStock);
+          this.onComicPopup?.('MINI TURBO!', '#22d3ee');
+        }
+      } else {
+        this.boosterGauge = 100;
       }
       this.onBoosterGaugeChange(this.boosterGauge);
 
@@ -3233,7 +3362,7 @@ export class GameEngine {
         this.isDrifting = false;
         AudioEngine.setDriftActive(false);
       }
-      this.driftAngle = THREE.MathUtils.lerp(this.driftAngle, 0, 0.22);
+      this.driftAngle = THREE.MathUtils.lerp(this.driftAngle, 0, 0.12);
     }
 
     this.angle += angleDiff;
@@ -3723,9 +3852,9 @@ export class GameEngine {
   checkCollisions() {
     const pPos = this.playerKart.mesh.position;
 
-    // Item Box collisions
+    // Item Box collisions (enlarged box & pickup radius)
     this.itemBoxes.forEach(box => {
-      if (box.active && pPos.distanceTo(box.mesh.position) < 4.5) {
+      if (box.active && pPos.distanceTo(box.mesh.position) < 6.2) {
         box.active = false;
         box.mesh.visible = false;
         box.respawnTimer = 300;
@@ -3735,7 +3864,7 @@ export class GameEngine {
 
       // AI item box acquisition (only in item mode)
       if (this.gameMode === 'item' && box.active && this.aiKart && this.aiKart.mesh) {
-        if (this.aiKart.mesh.position.distanceTo(box.mesh.position) < 4.5) {
+        if (this.aiKart.mesh.position.distanceTo(box.mesh.position) < 6.2) {
           box.active = false;
           box.mesh.visible = false;
           box.respawnTimer = 300;
@@ -3853,8 +3982,7 @@ export class GameEngine {
         if (this.aiFinishedTimeRemaining === null) {
           this.aiFinishedTimeRemaining = 10.0;
           this.aiFinishedTime = this.timer;
-          this.onHUDNotification?.('⚠️ 라이벌 완주!', '상대 카트가 먼저 피니시 라인을 통과했습니다! 10초 내에 완주를 마쳐야 주행이 인정됩니다!');
-          this.onComicPopup?.('RIVAL FINISHED!', '#ef4444');
+          this.onRivalCountdownChange?.(10);
         }
         return;
       }

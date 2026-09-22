@@ -513,6 +513,24 @@ export const AudioEngine = {
     } catch (e) {}
   },
 
+  playHorn() {
+    if (!this.ctx) this.init();
+    if (!this.ctx) return;
+    try {
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(580, this.ctx.currentTime);
+      osc.frequency.setValueAtTime(440, this.ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.09, this.ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.35);
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start();
+      osc.stop(this.ctx.currentTime + 0.35);
+    } catch (e) {}
+  },
+
   playBGM(mapId: string = 'neon_sky_way') {
     if (!this.ctx) this.init();
     if (!this.ctx) return;
@@ -1153,6 +1171,8 @@ export class GameEngine {
   shieldTimer = 0;
   aiProgress = 0;
   lastCrashTime = 0;
+  playerCrashCount = 0;
+  hasWallCollided = false;
 
   // AI item management
   gameMode: string = 'speed';
@@ -2458,6 +2478,8 @@ export class GameEngine {
     this.boosterGauge = 0;
     this.boosterStock = 0;
     this.boosterActive = false;
+    this.playerCrashCount = 0;
+    this.hasWallCollided = false;
     this.lapCheckpoints = [false, false];
     this.aiLap = 1;
     this.aiLapCheckpoints = [false, false];
@@ -3554,6 +3576,8 @@ export class GameEngine {
         // Push slightly inside to prevent sticking
         this.playerKart.mesh.position.copy(pushDir).multiplyScalar(maxArenaRadius - 0.6);
         this.playerKart.mesh.position.y = this.verticalOffset;
+        this.hasWallCollided = true;
+        this.playerCrashCount++;
 
         if (Math.abs(this.speed) > 0.15) {
           this.speed *= 0.88; // Custom slide friction instead of abrupt rotating
@@ -3581,6 +3605,8 @@ export class GameEngine {
         // Push slightly inside the road boundary to prevent sticking
         this.playerKart.mesh.position.copy(centerPt).add(pushDir.multiplyScalar(maxRoadRadius - 0.6));
         this.playerKart.mesh.position.y = centerPt.y * 0.01 + this.verticalOffset;
+        this.hasWallCollided = true;
+        this.playerCrashCount++;
 
         if (Math.abs(this.speed) > 0.15) {
           this.speed *= 0.88; // Custom slide friction instead of abrupt rotating

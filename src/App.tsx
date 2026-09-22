@@ -38,6 +38,9 @@ import { DecalPainter } from './components/DecalPainter';
 import { MiniKartRenderer } from './components/MiniKartRenderer';
 import { PeerNetworkManager } from './network';
 import { isSupabaseConfigured, fetchRankingsFromSupabase, saveRankingToSupabase } from './supabase';
+import { fetchLiveCloudRankings, saveLiveCloudRanking, CloudRankingItem, isBotPlayer } from './cloudLeaderboard';
+import { GachaRoulette } from './components/GachaRoulette';
+import { PastelTierRanking } from './components/PastelTierRanking';
 
 
 export interface AuraInfo {
@@ -384,7 +387,10 @@ export default function App() {
   const [rankingFilter, setRankingFilter] = useState<'global' | 'friends' | 'time_attack' | 'season'>('global');
   const [leaderboardMapId, setLeaderboardMapId] = useState<string>(selectedMapId || 'neon_sky_way');
   const [crashCountThisRace, setCrashCountThisRace] = useState<number>(0);
+  const crashCountRef = useRef<number>(0);
+  const lastBoosterUseTimeRef = useRef<number>(0);
   const [rivalCountdown, setRivalCountdown] = useState<number | null>(null);
+  const rivalCountdownIntervalRef = useRef<any>(null);
   const [kartSelectAnim, setKartSelectAnim] = useState<string | null>(null);
 
   // Profile Frames System (Lv.10 Best Player, Lv.20 God's Blessing)
@@ -447,10 +453,10 @@ export default function App() {
     rewardSkin?: string;
   }>>(() => {
     const defaultAchievements = [
-      { id: 'drift_count', name: '드리프트 매니아', desc: '코너 길목 드리프트 15회 주행 달성', target: 15, current: 0, completed: false, rewardClaimed: false, rewardGold: 300, rewardTitle: '아스팔트 마스터' },
-      { id: 'use_booster', name: '질풍노도', desc: '순간 가속 질주 부스터 10회 점화', target: 10, current: 0, completed: false, rewardGold: 400, rewardTitle: '포뮬러 라이더' },
+      { id: 'drift_count', name: '드리프트 매니아', desc: '코너 길목 드리프트 100회 주행 달성', target: 100, current: 0, completed: false, rewardClaimed: false, rewardGold: 800, rewardTitle: '아스팔트 마스터' },
+      { id: 'use_booster', name: '질풍노도', desc: '순간 가속 질주 부스터 50회 점화', target: 50, current: 0, completed: false, rewardGold: 600, rewardTitle: '포뮬러 라이더' },
       { id: 'maps_cleared', name: '그랜드 투어러', desc: '서킷 완주 5회 완료', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 600, rewardTitle: '바람의 지배자', rewardSkin: 'magma_red' },
-      { id: 'gacha_spins', name: '차고지 대부', desc: '행운의 뽑기 상점 3회 참여', target: 3, current: 0, completed: false, rewardClaimed: false, rewardGold: 200, rewardTitle: '수집 대마왕' },
+      { id: 'gacha_spins', name: '차고지 대부', desc: '행운의 뽑기 상점 30회 참여', target: 30, current: 0, completed: false, rewardClaimed: false, rewardGold: 1000, rewardTitle: '수집 대마왕' },
       { id: 'time_under_65', name: '한계 돌파', desc: '스카이 웨이 완주 리포트 65초 미만 돌파', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 800, rewardTitle: '빛의 속도', rewardSkin: 'diamond_silver' },
       { id: 'no_crash_finish', name: '무결점 드라이버', desc: '기물이나 외벽 충돌 0회 상태로 레이스 완주', target: 1, current: 0, completed: false, rewardClaimed: false, rewardGold: 1000, rewardTitle: '신의 경지', rewardSkin: 'emerald_gold' },
       { id: 'all_maps_under_28', name: '한계 속도의 군주', desc: '기본 5개 트랙 각각 28초 이내 완주 기록 달성 (롱 코스 제외)', target: 5, current: 0, completed: false, rewardClaimed: false, rewardGold: 2000, rewardTitle: '광속 지배자', rewardSkin: 'neon_pulse' }
@@ -464,11 +470,13 @@ export default function App() {
           const merged = defaultAchievements.map(def => {
             const existing = parsed.find(p => p.id === def.id);
             if (existing) {
+              const currentVal = typeof existing.current === 'number' ? existing.current : 0;
+              const isDone = currentVal >= def.target;
               return { 
                 ...def, 
-                current: existing.current, 
-                completed: existing.completed, 
-                rewardClaimed: existing.rewardClaimed 
+                current: currentVal, 
+                completed: isDone, 
+                rewardClaimed: isDone ? (existing.rewardClaimed || false) : false 
               };
             }
             return def;
@@ -792,71 +800,45 @@ export default function App() {
     }
   }, [bestTimes]);
 
-  // Load Leaderboard
+  // Load Real Player Live Cloud Leaderboard (No AI bots)
   useEffect(() => {
     const loadLeaderboardData = async () => {
-      let baseLeaderboard: Array<{
-        id: string;
-        playerName: string;
-        mapName: string;
-        gameMode: string;
-        kartName: string;
-        finalTimeStr: string;
-        finalTimeMs: number;
-        date: string;
-        isPlayer: boolean;
-      }> = [];
+      try {
+        const cloudRecords = await fetchLiveCloudRankings();
+        if (cloudRecords && cloudRecords.length > 0) {
+          setLeaderboard(cloudRecords);
+          return;
+        }
 
-      const cached = localStorage.getItem('kart_rider_leaderboard');
-      if (cached) {
-        baseLeaderboard = JSON.parse(cached);
-      } else {
-        const defaultLeaderboard = [
-          { id: 'def-1', playerName: '다오 (Dao)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:24.52', finalTimeMs: 24520, date: '2026.07.08', isPlayer: false },
-          { id: 'def-2', playerName: '배찌 (Bazzi)', mapName: '네온 스카이 웨이', gameMode: '스피드전', kartName: '브레이브칼리버', finalTimeStr: '00:25.10', finalTimeMs: 25100, date: '2026.07.09', isPlayer: false },
-          { id: 'def-3', playerName: '우니 (Wuni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:27.42', finalTimeMs: 27420, date: '2026.07.09', isPlayer: false },
-          { id: 'def-4', playerName: '디지니 (Dizni)', mapName: '사이스페이스 터널', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:28.95', finalTimeMs: 28950, date: '2026.07.08', isPlayer: false },
-          { id: 'def-5', playerName: '마리드 (Marid)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.15', finalTimeMs: 26150, date: '2026.07.09', isPlayer: false },
-          { id: 'def-6', playerName: '케피 (Kephi)', mapName: '코스믹 하이웨이', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:27.80', finalTimeMs: 27800, date: '2026.07.07', isPlayer: false },
-          { id: 'def-7', playerName: '다오 (Dao)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:25.88', finalTimeMs: 25880, date: '2026.07.09', isPlayer: false },
-          { id: 'def-8', playerName: '배찌 (Bazzi)', mapName: '마그마 크레비스', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:26.40', finalTimeMs: 26400, date: '2026.07.08', isPlayer: false },
-          { id: 'def-9', playerName: '우니 (Wuni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '네온 페라리', finalTimeStr: '00:27.12', finalTimeMs: 27120, date: '2026.07.09', isPlayer: false },
-          { id: 'def-10', playerName: '디지니 (Dizni)', mapName: '아이스 윈드 캠프', gameMode: '스피드전', kartName: '크로스 윈드', finalTimeStr: '00:28.05', finalTimeMs: 28050, date: '2026.07.07', isPlayer: false },
-          { id: 'def-11', playerName: '에티 (Etti)', mapName: '봄날의 흩날리는 벚꽃길', gameMode: '스피드전', kartName: '플린트', finalTimeStr: '00:42.15', finalTimeMs: 42150, date: '2026.07.08', isPlayer: false },
-          { id: 'def-12', playerName: '모스 (Mos)', mapName: '여름 빌리지 코코넛 해안', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:46.30', finalTimeMs: 46300, date: '2026.07.09', isPlayer: false },
-          { id: 'def-13', playerName: '다오 (Dao)', mapName: '가을빛 단풍나무 비밀 계곡', gameMode: '스피드전', kartName: '디 아웃레이지 엠퍼러', finalTimeStr: '00:44.75', finalTimeMs: 44750, date: '2026.07.09', isPlayer: false },
-          { id: 'def-14', playerName: '배찌 (Bazzi)', mapName: '겨울 왕국 설화의 하얀 트랙', gameMode: '스피드전', kartName: '다크 옵시디언', finalTimeStr: '00:51.20', finalTimeMs: 51200, date: '2026.07.08', isPlayer: false }
-        ];
-        baseLeaderboard = defaultLeaderboard;
-        localStorage.setItem('kart_rider_leaderboard', JSON.stringify(defaultLeaderboard));
-      }
-
-      if (isSupabaseConfigured) {
-        try {
+        // Secondary fallback to Supabase if configured
+        if (isSupabaseConfigured) {
           const supabaseRecords = await fetchRankingsFromSupabase();
-          if (supabaseRecords.length > 0) {
-            // Filter out default records with matched player and map, prioritize live database
-            const combined = [...supabaseRecords, ...baseLeaderboard.filter(b => b.id.startsWith('def-'))];
-            const unique: Record<string, typeof combined[0]> = {};
-            combined.forEach(item => {
-              const key = `${item.playerName}-${item.mapName}`;
-              if (!unique[key] || item.finalTimeMs < unique[key].finalTimeMs) {
-                unique[key] = item;
-              }
-            });
-            const sorted = Object.values(unique).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
-            setLeaderboard(sorted);
+          const cleanReal = (supabaseRecords || []).filter(r => r.isPlayer && !isBotPlayer(r.playerName));
+          if (cleanReal.length > 0) {
+            setLeaderboard(cleanReal);
             return;
           }
-        } catch (e) {
-          console.error('Supabase load failed:', e);
         }
-      }
 
-      setLeaderboard(baseLeaderboard);
+        // Local cache fallback (only real players)
+        const cached = localStorage.getItem('kart_real_players_leaderboard');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const cleanCached = (parsed || []).filter((r: any) => r.isPlayer && !isBotPlayer(r.playerName));
+          setLeaderboard(cleanCached);
+        } else {
+          setLeaderboard([]);
+        }
+      } catch (err) {
+        console.warn('Leaderboard sync error:', err);
+      }
     };
 
     loadLeaderboardData();
+
+    // Periodic real-time sync every 25 seconds for cross-player updates
+    const syncInterval = setInterval(loadLeaderboardData, 25000);
+    return () => clearInterval(syncInterval);
   }, []);
 
 
@@ -934,6 +916,25 @@ export default function App() {
         return [...next, outcome].sort((a,b) => (a.finalTime || 999999) - (b.finalTime || 999999));
       });
       showHUDNotification('완주 결과', `${outcome.name} 레이서가 완주를 완료했습니다.`);
+      if (outcome.finished && gameState === 'playing' && !rivalCountdownIntervalRef.current) {
+        let count = 10;
+        setRivalCountdown(count);
+        try { AudioEngine.playHorn(); } catch(e){}
+        triggerComicTextPop('10 SECONDS LEFT!', '#ef4444');
+        rivalCountdownIntervalRef.current = setInterval(() => {
+          count--;
+          if (count > 0) {
+            setRivalCountdown(count);
+          } else {
+            clearInterval(rivalCountdownIntervalRef.current);
+            rivalCountdownIntervalRef.current = null;
+            setRivalCountdown(null);
+            if (gameState === 'playing') {
+              concludeRaceOutcome(false, engineRef.current?.timer || 0);
+            }
+          }
+        }, 1000);
+      }
     };
 
     netManager.init('host', code);
@@ -997,6 +998,33 @@ export default function App() {
       launchRace(true, mapId, matchedMode);
     };
 
+    netManager.onOutcomeReceived = (outcome) => {
+      setLatestMultiplayerOutcomes(prev => {
+        const next = prev.filter(x => x.peerId !== outcome.peerId);
+        return [...next, outcome].sort((a,b) => (a.finalTime || 999999) - (b.finalTime || 999999));
+      });
+      showHUDNotification('완주 결과', `${outcome.name} 레이서가 완주를 완료했습니다.`);
+      if (outcome.finished && gameState === 'playing' && !rivalCountdownIntervalRef.current) {
+        let count = 10;
+        setRivalCountdown(count);
+        try { AudioEngine.playHorn(); } catch(e){}
+        triggerComicTextPop('10 SECONDS LEFT!', '#ef4444');
+        rivalCountdownIntervalRef.current = setInterval(() => {
+          count--;
+          if (count > 0) {
+            setRivalCountdown(count);
+          } else {
+            clearInterval(rivalCountdownIntervalRef.current);
+            rivalCountdownIntervalRef.current = null;
+            setRivalCountdown(null);
+            if (gameState === 'playing') {
+              concludeRaceOutcome(false, engineRef.current?.timer || 0);
+            }
+          }
+        }, 1000);
+      }
+    };
+
     netManager.init('client', cleanCode);
     setNetRole('client');
   };
@@ -1035,6 +1063,7 @@ export default function App() {
       
       if (k === ' ' || k === 'Control') {
         e.preventDefault();
+        if (e.repeat) return; // Prevent double-trigger from held key!
         if (gameMode === 'paint_turf') {
           const now = Date.now();
           if (now - lastPaintGunShotRef.current > 80) {
@@ -1293,6 +1322,12 @@ export default function App() {
       updateActiveItem(null);
       setShieldActive(false);
       setCrashCountThisRace(0);
+      crashCountRef.current = 0;
+      setRivalCountdown(null);
+      if (rivalCountdownIntervalRef.current) {
+        clearInterval(rivalCountdownIntervalRef.current);
+        rivalCountdownIntervalRef.current = null;
+      }
 
       if (canvasContainerRef.current) {
         if (engineRef.current) {
@@ -1451,6 +1486,12 @@ export default function App() {
         };
         engineRef.current.onRivalCountdownChange = (sec: number | null) => {
           setRivalCountdown(sec);
+          if (sec !== null && sec > 0) {
+            try {
+              if (sec === 10) AudioEngine.playHorn();
+              AudioEngine.playShuffleTick();
+            } catch (e) {}
+          }
         };
 
         // Render immediately so starting grid & kart are visible!
@@ -1645,7 +1686,8 @@ export default function App() {
       if (currentMap.id === 'neon_sky_way' && finalTime < 65000) {
         updateAchievementProgress('time_under_65', 1);
       }
-      if (crashCountThisRace === 0) {
+      const totalCrashes = (crashCountRef.current || 0) + (engineRef.current?.playerCrashCount || 0) + (engineRef.current?.hasWallCollided ? 1 : 0);
+      if (totalCrashes === 0) {
         updateAchievementProgress('no_crash_finish', 1);
       }
     } catch (err) {
@@ -1957,10 +1999,30 @@ export default function App() {
         isPlayer: r.isPlayer
       }));
 
-      // Persist to Supabase if configured
-      if (isSupabaseConfigured) {
-        const playerRec = newRecords.find(item => item.isPlayer);
-        if (playerRec) {
+      // Only save real human players to cloud leaderboard (Exclude AI bots like Dao, Bazzi)
+      const realPlayerRecords = newRecords.filter(r => r.isPlayer && !isBotPlayer(r.playerName));
+      const playerRec = realPlayerRecords[0];
+
+      if (playerRec) {
+        // Save to Live Cloud Leaderboard (syncs across Vercel and all devices in real-time)
+        saveLiveCloudRanking({
+          playerName: playerRec.playerName,
+          mapName: playerRec.mapName,
+          gameMode: playerRec.gameMode,
+          kartName: playerRec.kartName,
+          finalTimeStr: playerRec.finalTimeStr,
+          finalTimeMs: playerRec.finalTimeMs,
+          isPlayer: true,
+          tier: getTierInfo(rankPoints).name,
+          rp: rankPoints
+        }).then(updatedList => {
+          if (updatedList && updatedList.length > 0) {
+            setLeaderboard(updatedList);
+          }
+        }).catch(err => console.warn('Live cloud save error:', err));
+
+        // Also sync to Supabase if configured
+        if (isSupabaseConfigured) {
           saveRankingToSupabase({
             playerName: playerRec.playerName,
             mapName: playerRec.mapName,
@@ -1968,35 +2030,9 @@ export default function App() {
             kartName: playerRec.kartName,
             finalTimeMs: playerRec.finalTimeMs,
             isPlayer: true
-          }).then(success => {
-            if (success) {
-              // Reload leaderboard from Supabase to show real live listings
-              fetchRankingsFromSupabase().then(supabaseRecords => {
-                if (supabaseRecords.length > 0) {
-                  const cachedBoard = JSON.parse(localStorage.getItem('kart_rider_leaderboard') || '[]');
-                  const combined = [...supabaseRecords, ...cachedBoard.filter((b: any) => b.id.startsWith('def-'))];
-                  const unique: Record<string, typeof combined[0]> = {};
-                  combined.forEach(item => {
-                    const key = `${item.playerName}-${item.mapName}`;
-                    if (!unique[key] || item.finalTimeMs < unique[key].finalTimeMs) {
-                      unique[key] = item;
-                    }
-                  });
-                  const sorted = Object.values(unique).sort((a, b) => a.finalTimeMs - b.finalTimeMs);
-                  setLeaderboard(sorted);
-                }
-              });
-            }
-          }).catch(err => {
-            console.error('Supabase persistence failed:', err);
-          });
+          }).catch(err => console.warn('Supabase save error:', err));
         }
       }
-
-      const currentLeaderboard = JSON.parse(localStorage.getItem('kart_rider_leaderboard') || '[]');
-      const sorted = [...newRecords, ...currentLeaderboard].sort((a, b) => a.finalTimeMs - b.finalTimeMs).slice(0, 100);
-      localStorage.setItem('kart_rider_leaderboard', JSON.stringify(sorted));
-      setLeaderboard(sorted);
 
     } catch (e) {
       console.error(e);
@@ -2022,19 +2058,23 @@ export default function App() {
     if (gameState !== 'playing') return;
 
     if (gameMode !== 'item') {
+      const now = Date.now();
+      // Guard against rapid duplicate trigger within 350ms
+      if (now - lastBoosterUseTimeRef.current < 350) return;
+
       if (boosterStock > 0) {
-        setBoosterStock(prev => {
-          const next = prev - 1;
-          if (engineRef.current) {
-            engineRef.current.boosterStock = next;
-            engineRef.current.boosterGauge = 0;
-            engineRef.current.onBoosterGaugeChange(0);
-            engineRef.current.activateBooster();
-          }
-          return next;
-        });
+        lastBoosterUseTimeRef.current = now;
+        const next = boosterStock - 1;
+        setBoosterStock(next);
+        if (engineRef.current) {
+          engineRef.current.boosterStock = next;
+          engineRef.current.boosterGauge = 0;
+          engineRef.current.onBoosterGaugeChange(0);
+          engineRef.current.onBoosterCountChange(next);
+          engineRef.current.activateBooster();
+        }
         triggerComicTextPop('SPEED BOOST!', '#22d3ee');
-        showHUDNotification('부스터 발동!', '광속 가속 모드에 진입했습니다.');
+        showHUDNotification('부스터 발동!', `광속 가속 모드! (남은 부스터: ${next}개)`);
       }
       return;
     }
@@ -2083,6 +2123,12 @@ export default function App() {
   const quitRace = () => {
     triggerAudioInit();
     setRivalCountdown(null);
+    if (rivalCountdownIntervalRef.current) {
+      clearInterval(rivalCountdownIntervalRef.current);
+      rivalCountdownIntervalRef.current = null;
+    }
+    crashCountRef.current = 0;
+    setCrashCountThisRace(0);
     keysPressedRef.current = {};
     if (engineRef.current) {
       engineRef.current.cleanup();
@@ -4698,57 +4744,28 @@ export default function App() {
                   exit={{ opacity: 0, y: -10 }}
                   className="bg-slate-900/80 border-2 border-slate-700/60 rounded-3xl p-6 shadow-xl w-full flex flex-col md:flex-row gap-6 items-stretch"
                 >
-                  <div className="flex-1 bg-slate-950 p-6 rounded-2xl border-2 border-slate-800 flex flex-col items-center justify-between text-center min-h-[290px] relative overflow-hidden">
-                    <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-yellow-500 via-rose-500 to-cyan-500" />
+                  <div className="flex-1 bg-slate-950 p-6 rounded-3xl border-2 border-slate-800 flex flex-col items-center justify-between text-center min-h-[360px] relative overflow-hidden">
+                    <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-yellow-500 via-rose-500 to-cyan-500" />
                     
-                    <div>
-                      <span className="text-[9px] font-black text-yellow-400 bg-yellow-400/10 px-3 py-1 rounded-full uppercase tracking-widest mb-2 inline-block">
-                        🎰 LUCKY CAPSULE MACHINE
+                    <div className="mb-3">
+                      <span className="text-[9px] font-black text-yellow-400 bg-yellow-400/10 px-3 py-1 rounded-full uppercase tracking-widest mb-1.5 inline-block border border-yellow-500/30">
+                        🎰 SILHOUETTE ROULETTE CAPSULE
                       </span>
-                      <h4 className="text-lg font-black text-white mt-1.5">카트 캡슐 행운상자 슈터</h4>
-                      <p className="text-xs text-gray-400 mt-1 max-w-[325px] leading-relaxed">
-                        1회 주행 시 획득한 골드를 모아 <strong>100 Gold</strong>로 행운 상자를 뽑으세요. 만일 이미 보유 중인 중복 카트 바디를 획득할 경우, 보상 차원으로 <strong>50 Gold (50%)</strong>가 계정으로 자동 페이백 처리됩니다.
+                      <h4 className="text-lg font-black text-white mt-1">검은 차량 실루엣 회전 룰렛</h4>
+                      <p className="text-xs text-gray-400 mt-1 max-w-[380px] leading-relaxed mx-auto">
+                        <strong>100 Gold</strong>로 룰렛을 작동시키면 <strong>검은 차량 실루엣</strong>들이 회전하며 행운의 머신을 추첨합니다. 중복 카트 획득 시 <strong>50 Gold (50%)</strong>가 페이백 환급됩니다!
                       </p>
                     </div>
 
-                    <div className="my-4 w-full max-w-[320px]">
-                      <div className="bg-slate-900 border-4 border-yellow-500/80 rounded-2xl py-4 px-6 shadow-inner flex justify-center items-center font-mono relative">
-                        <div className="absolute top-0 right-2 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping mt-1.5" />
-                        {isDrawing ? (
-                          <div className="flex flex-col items-center py-2 animate-pulse">
-                            <span className="text-yellow-400 font-extrabold text-[9px] uppercase tracking-widest">룰렛 셔플 진행 중</span>
-                            <span className="text-white text-lg font-black italic">{gachaIntervalText}</span>
-                          </div>
-                        ) : drawnKart ? (
-                          <div className="flex flex-col items-center w-full">
-                            <span className={`text-[8px] font-black px-2 py-0.5 rounded uppercase tracking-wider mb-1 shadow-sm ${
-                              drawnKart.rarity === 'Legendary' ? 'bg-purple-600 text-white' : drawnKart.rarity === 'Rare' ? 'bg-cyan-500 text-slate-950' : 'bg-slate-800 text-slate-350 text-slate-300'
-                            }`}>
-                              {drawnKart.rarity}
-                            </span>
-                            <span className="text-white text-md font-black comic-text italic leading-tight">{drawnKart.name}</span>
-                            <span className="text-yellow-400 text-[9.5px] font-bold mt-1.5 block">
-                              {drawRefund ? '💥 아쉽게도 중복! 50G 환전 환급 처리!' : '🎖️ 신형 머신을 주차 완료했습니다!'}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-500 text-xs font-medium">하단의 캡슐 슈팅 레버를 터치 또는 발사하세요.</span>
-                        )}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleGachaDraw}
-                      disabled={isDrawing || gold < 100}
-                      className={`w-full max-w-[320px] py-3 px-6 rounded-xl font-black text-xs cursor-pointer shadow-lg active:scale-95 transition-all text-center ${
-                        isDrawing || gold < 100
-                          ? 'bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-850'
-                          : 'bg-gradient-to-r from-yellow-400 via-amber-300 to-yellow-500 hover:opacity-90 text-slate-950 animate-bounce'
-                      }`}
-                    >
-                      {gold < 100 ? '골드가 부족합니다' : '100 Gold 소모하여 캡슐 슈팅'}
-                    </button>
+                    <GachaRoulette
+                      isDrawing={isDrawing}
+                      drawnKart={drawnKart}
+                      drawRefund={drawRefund}
+                      gold={gold}
+                      onDraw={handleGachaDraw}
+                      karts={KARTS}
+                      unlockedKarts={unlockedKarts}
+                    />
                   </div>
 
                   {/* Right side: Draw probability transparency board */}
@@ -5270,13 +5287,18 @@ export default function App() {
                             {[
                               { id: '초보 라이더', label: '초보 라이더', desc: '초기 기본 제공 칭호' },
                               { id: '동네 한바퀴', label: '동네 한바퀴', desc: '트랙 산책이 특기' },
-                              { id: '아스팔트 마스터', label: '아스팔트 마스터', desc: '드리프트 매니아 15회 보상' },
-                              { id: '포뮬러 라이더', label: '포뮬러 라이더', desc: '질풍노도 부스터 10회 보상' },
+                              { id: '아스팔트 마스터', label: '아스팔트 마스터', desc: '드리프트 매니아 100회 보상' },
+                              { id: '포뮬러 라이더', label: '포뮬러 라이더', desc: '질풍노도 부스터 50회 보상' },
                               { id: '바람의 지배자', label: '바람의 지배자', desc: '그랜드 투어러 서킷 5회 보상' },
-                              { id: '수집 대마왕', label: '수집 대마왕', desc: '차고지 대부 뽑기 3회 보상' },
+                              { id: '수집 대마왕', label: '수집 대마왕', desc: '차고지 대부 뽑기 30회 보상' },
                               { id: '빛의 속도', label: '빛의 속도', desc: '한계 돌파 65초 미만 보상' },
                               { id: '신의 경지', label: '신의 경지', desc: '무결점 드라이버 무충돌 보상' },
-                              { id: '광속 지배자', label: '광속 지배자', desc: '모든 맵 28초 이내 완주 보상' }
+                              { id: '광속 지배자', label: '광속 지배자', desc: '모든 맵 28초 이내 완주 보상' },
+                              ...unlockedTitles.filter(t => t.startsWith('[시즌')).map(t => ({
+                                id: t,
+                                label: t,
+                                desc: '🌟 7일 주기 시즌 랭킹 한정판 칭호'
+                              }))
                             ].map((tit) => {
                               const isOwned = unlockedTitles.includes(tit.id);
                               const isEquipped = selectedTitle === tit.id;
@@ -6023,18 +6045,25 @@ CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHEC
                       )}
 
                       {rankingFilter === 'season' && (
-                        <div className="bg-slate-950/70 p-5 rounded-xl border border-slate-800 text-center flex flex-col items-center justify-center py-8 font-sans">
-                          <span className="text-4xl mb-3">♻️</span>
-                          <h4 className="text-sm font-black text-white uppercase tracking-wider mb-2">시즌 리그 주간/월간 타임테이블 스케줄러</h4>
-                          <p className="text-[10.5px] text-gray-400 max-w-md mx-auto leading-relaxed mb-4">
-                            매주 월요일 00:00에 실시간 전체 유저 및 맵별 최고 기록이 공식 초기화되며, 축적된 드라이버 배틀 레이팅(RP) 티어에 따라 기체 치장 칭호와 전교 공인 코인 보상이 격주로 우편 지급됩니다.
-                          </p>
-                          <div className="bg-slate-900 border border-slate-850 rounded-xl p-3 text-left w-full max-w-xs text-[10px] font-mono space-y-1.5 text-gray-400 mx-auto">
-                            <div className="flex justify-between text-white"><span>남은 정산 시간:</span> <span className="text-pink-400 font-extrabold">2일 14시간 52분</span></div>
-                            <div className="flex justify-between"><span>예상 달성 등급:</span> <span className="text-violet-400">{getTierInfo(rankPoints).name}</span></div>
-                            <div className="flex justify-between"><span>수령 가능 티어 보상:</span> <span className="text-yellow-400 font-extrabold">1,500 Gold + 한정판 스킨</span></div>
-                          </div>
-                        </div>
+                        <PastelTierRanking
+                          rankPoints={rankPoints}
+                          realLeaderboard={leaderboard}
+                          playerName={playerNameInput || '플레이어'}
+                          unlockedTitles={unlockedTitles}
+                          onUnlockTitle={(title) => {
+                            setUnlockedTitles(prev => {
+                              const next = [...prev, title];
+                              localStorage.setItem('anime_unlocked_titles', JSON.stringify(next));
+                              return next;
+                            });
+                          }}
+                          onAddGold={(amt) => {
+                            setGold(prev => prev + amt);
+                          }}
+                          onNotification={(title, msg) => {
+                            showHUDNotification(title, msg);
+                          }}
+                        />
                       )}
 
                     </div>
@@ -6470,6 +6499,29 @@ CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHEC
             </div>
           )}
           
+          {/* --- TOP 10-SECOND RETIRE COUNTDOWN BANNER (10초 카운트다운 배너) --- */}
+          {rivalCountdown !== null && rivalCountdown > 0 && (
+            <div className="absolute top-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex flex-col items-center animate-bounce">
+              <div className="bg-gradient-to-r from-red-650 via-rose-600 to-red-650 bg-red-950/95 border-4 border-yellow-400 text-white px-7 py-2.5 rounded-3xl shadow-[0_0_50px_rgba(239,68,68,0.95)] flex items-center space-x-4 backdrop-blur-md">
+                <div className="flex flex-col items-end text-right">
+                  <span className="text-[10px] font-black text-yellow-300 tracking-widest uppercase flex items-center gap-1.5 font-mono">
+                    <span className="w-2.5 h-2.5 rounded-full bg-yellow-300 animate-ping inline-block" />
+                    🚨 RETIRE COUNTDOWN 🚨
+                  </span>
+                  <span className="text-[11px] font-black text-white/95">
+                    상대 레이서 완주! 10초 이내에 결승선을 통과하세요!
+                  </span>
+                </div>
+                <div className="bg-black/90 border-2 border-yellow-400 px-4 py-1.5 rounded-2xl flex items-center justify-center min-w-[70px] shadow-inner">
+                  <span className="text-4xl md:text-5xl font-black font-mono text-yellow-400 animate-pulse tracking-tighter">
+                    {rivalCountdown}
+                  </span>
+                  <span className="text-xs font-black text-yellow-300 ml-1 font-mono">초</span>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="flex justify-between items-start w-full">
             <div className="flex flex-col space-y-2 pointer-events-auto">
               <div className="bg-black/90 px-4 py-2 rounded-2xl border-2 border-pink-500 flex items-center space-x-3 shadow-lg font-mono">

@@ -25,6 +25,10 @@ export interface MapInfo {
   boosterPads?: [number, number, number][];
   jumpRamps?: [number, number, number][];
   shortcuts?: [number, number, number][];
+  icon?: string;
+  theme?: string;
+  desc?: string;
+  length?: string;
 }
 
 // Network P2P Room Structures

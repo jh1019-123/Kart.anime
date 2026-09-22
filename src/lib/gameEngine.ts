@@ -1076,54 +1076,6 @@ export const AudioEngine = {
     this.bgmInterval = setInterval(runScheduler, stepDuration * 1000);
   },
 
-  playKartSelected() {
-    if (!this.ctx) this.init();
-    if (!this.ctx) return;
-    try {
-      const now = this.ctx.currentTime;
-      // High-tech electronic double chime (F#5 -> C#6) with warm chorus
-      const freqs = [739.99, 1108.73];
-      freqs.forEach((f, i) => {
-        if (!this.ctx) return;
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(f, now + i * 0.09);
-        gain.gain.setValueAtTime(0, now + i * 0.09);
-        gain.gain.linearRampToValueAtTime(0.08, now + i * 0.09 + 0.015);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.09 + 0.35);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start(now + i * 0.09);
-        osc.stop(now + i * 0.09 + 0.38);
-      });
-
-      // Subtle engine throttle rev pulse to signify vehicle ready!
-      const revOsc = this.ctx.createOscillator();
-      const revGain = this.ctx.createGain();
-      const revFilter = this.ctx.createBiquadFilter();
-      revOsc.type = 'sawtooth';
-      revOsc.frequency.setValueAtTime(75, now + 0.05);
-      revOsc.frequency.exponentialRampToValueAtTime(240, now + 0.28);
-      revOsc.frequency.exponentialRampToValueAtTime(95, now + 0.55);
-
-      revFilter.type = 'lowpass';
-      revFilter.frequency.setValueAtTime(320, now + 0.05);
-      revFilter.frequency.exponentialRampToValueAtTime(1100, now + 0.28);
-      revFilter.frequency.exponentialRampToValueAtTime(280, now + 0.55);
-
-      revGain.gain.setValueAtTime(0, now + 0.05);
-      revGain.gain.linearRampToValueAtTime(0.055, now + 0.18);
-      revGain.gain.exponentialRampToValueAtTime(0.001, now + 0.58);
-
-      revOsc.connect(revFilter);
-      revFilter.connect(revGain);
-      revGain.connect(this.ctx.destination);
-      revOsc.start(now + 0.05);
-      revOsc.stop(now + 0.60);
-    } catch (e) {}
-  },
-
   stopBGM() {
     if (this.bgmInterval) {
       clearInterval(this.bgmInterval);
@@ -2262,9 +2214,27 @@ export class GameEngine {
     }
   }
 
+  getAuraColors(auraId?: string): { primary: number; secondary: number; spark: number; smoke: number } {
+    const id = auraId || this.playerAuraId || 'none';
+    if (id === 'neon_cyan') {
+      return { primary: 0x06b6d4, secondary: 0x22d3ee, spark: 0xa5f3fc, smoke: 0x0891b2 };
+    }
+    if (id === 'magma_ember') {
+      return { primary: 0xef4444, secondary: 0xf97316, spark: 0xfacc15, smoke: 0xb91c1c };
+    }
+    if (id === 'cosmic_nebula') {
+      return { primary: 0xa855f7, secondary: 0xec4899, spark: 0x38bdf8, smoke: 0x7e22ce };
+    }
+    if (id === 'golden_champion') {
+      return { primary: 0xeab308, secondary: 0xfacc15, spark: 0xffffff, smoke: 0xca8a04 };
+    }
+    // Default 'none': High-contrast dual neon cyan and racing magenta with brilliant sparks
+    return { primary: 0x06b6d4, secondary: 0xff007f, spark: 0xffffff, smoke: 0x475569 };
+  }
+
   createSmokeParticle(position: THREE.Vector3, colorHex = 0xffffff, size = 0.6) {
     // Avoid spawning too many particles to maintain 60 FPS
-    if (this.particleGroup.length > 80) {
+    if (this.particleGroup.length > 180) {
       const oldest = this.particleGroup.shift();
       if (oldest) {
         this.scene.remove(oldest);
@@ -2296,6 +2266,80 @@ export class GameEngine {
 
     this.scene.add(p);
     this.particleGroup.push(p);
+  }
+
+  createDriftTrail(leftTirePos: THREE.Vector3, rightTirePos: THREE.Vector3, auraId?: string) {
+    const colors = this.getAuraColors(auraId);
+    const tires = [
+      { pos: leftTirePos, isLeft: true },
+      { pos: rightTirePos, isLeft: false }
+    ];
+
+    tires.forEach((tire) => {
+      // 1. Glowing ground skid ribbon lying close to road
+      if (this.particleGroup.length < 180) {
+        const skidMat = new THREE.MeshBasicMaterial({
+          color: tire.isLeft ? colors.primary : colors.secondary,
+          transparent: true,
+          opacity: 0.9,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const skid = new THREE.Mesh(this.smokeGeometry, skidMat);
+        skid.position.copy(tire.pos);
+        // Elliptical flat mark aligned on ground
+        skid.scale.set(0.55, 0.1, 0.55);
+
+        const backDir = new THREE.Vector3(-Math.sin(this.angle), 0, -Math.cos(this.angle));
+        skid.userData = {
+          vel: backDir.clone().multiplyScalar(Math.max(0.1, this.speed * 0.15)),
+          initialScale: new THREE.Vector3(0.55, 0.1, 0.55),
+          life: 1.0,
+          decay: 0.05
+        };
+
+        this.scene.add(skid);
+        this.particleGroup.push(skid);
+      }
+
+      // 2. High-energy vibrant aura sparks shooting outward from rear tires
+      const sparkColor = Math.random() > 0.4 ? colors.spark : (tire.isLeft ? colors.primary : colors.secondary);
+      const sparkMat = new THREE.MeshBasicMaterial({
+        color: sparkColor,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending
+      });
+      const spark = new THREE.Mesh(this.smokeGeometry, sparkMat);
+      
+      const outwardDir = (tire.isLeft ? -1 : 1) * this.driftDirection;
+      const sideVec = new THREE.Vector3(
+        Math.cos(this.angle) * outwardDir,
+        0,
+        -Math.sin(this.angle) * outwardDir
+      );
+
+      spark.position.copy(tire.pos);
+      spark.scale.setScalar(0.26);
+      spark.userData = {
+        vel: new THREE.Vector3(
+          sideVec.x * 0.14 + (Math.random() - 0.5) * 0.09,
+          0.12 + Math.random() * 0.15,
+          sideVec.z * 0.14 + (Math.random() - 0.5) * 0.09
+        ),
+        initialSize: 0.26,
+        life: 1.0,
+        decay: 0.065
+      };
+
+      this.scene.add(spark);
+      this.particleGroup.push(spark);
+
+      // 3. Subtle ambient tire friction smoke
+      if (Math.random() < 0.35) {
+        this.createSmokeParticle(tire.pos, colors.smoke, 0.4);
+      }
+    });
   }
 
   createBoosterFlame(position: THREE.Vector3, speedHeading: THREE.Vector3, isPlayer = true) {
@@ -2477,6 +2521,51 @@ export class GameEngine {
 
     this.spawnItemBoxes();
     this.spawnCoins();
+  }
+
+  updateCountdownIdle() {
+    const idleVib = Math.sin(Date.now() * 0.04) * 0.035;
+    const basePlayerY = this.trackSpline.getPointAt(0).y * 0.01;
+    if (this.playerKart && this.playerKart.mesh) {
+      this.playerKart.mesh.position.y = basePlayerY + idleVib;
+
+      const pMarker = this.playerKart.mesh.getObjectByName("overhead_marker");
+      if (pMarker) pMarker.rotation.y += 0.05;
+
+      const pAura = this.playerKart.mesh.getObjectByName("aura_group");
+      if (pAura) {
+        const r1 = pAura.getObjectByName("ring1");
+        const r2 = pAura.getObjectByName("ring2");
+        const s1 = pAura.getObjectByName("star1");
+        const s2 = pAura.getObjectByName("star2");
+        if (r1) r1.rotation.z += 0.02;
+        if (r2) r2.rotation.z -= 0.028;
+        if (s1) s1.rotation.z += 0.03;
+        if (s2) s2.rotation.z -= 0.035;
+      }
+
+      if (Math.random() < 0.22) {
+        const rearOffset = new THREE.Vector3(0, 0.4, -2.1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
+        const sprayPos = this.playerKart.mesh.position.clone().add(rearOffset);
+        this.createSmokeParticle(sprayPos, 0x64748b, 0.35);
+      }
+    }
+
+    if (this.aiKart && this.aiKart.mesh) {
+      this.aiKart.mesh.position.y = basePlayerY + Math.sin(Date.now() * 0.04 + 1.2) * 0.035;
+      const aMarker = this.aiKart.mesh.getObjectByName("overhead_marker");
+      if (aMarker) aMarker.rotation.y += 0.05;
+
+      if (Math.random() < 0.22) {
+        const aiRearOffset = new THREE.Vector3(0, 0.4, -2.1).applyAxisAngle(new THREE.Vector3(0, 1, 0), this.angle);
+        const aiSprayPos = this.aiKart.mesh.position.clone().add(aiRearOffset);
+        this.createSmokeParticle(aiSprayPos, 0x64748b, 0.35);
+      }
+    }
+
+    this.updateParticles();
+    this.updateCamera();
+    this.render();
   }
 
   activateEngine() {
@@ -3344,8 +3433,15 @@ export class GameEngine {
       const leftTirePos = this.playerKart.mesh.position.clone().add(leftTyreOffset);
       const rightTirePos = this.playerKart.mesh.position.clone().add(rightTyreOffset);
       
-      this.createSmokeParticle(leftTirePos, 0xff007f, 0.48);
-      this.createSmokeParticle(rightTirePos, 0x06b6d4, 0.48);
+      // Dynamic Aura-colored dual-tire drift trails
+      this.createDriftTrail(leftTirePos, rightTirePos, this.playerAuraId);
+
+      // Extra radiant sparks if near mini-turbo full charge
+      if (this.boosterGauge >= 70 && Math.random() < 0.45) {
+        const colors = this.getAuraColors(this.playerAuraId);
+        const sparkPos = Math.random() > 0.5 ? leftTirePos : rightTirePos;
+        this.createSmokeParticle(sparkPos, colors.spark, 0.35);
+      }
 
       if (Math.random() < 0.35) {
         const offset = new THREE.Vector3(
@@ -3355,7 +3451,8 @@ export class GameEngine {
         );
         const spawnPos = this.playerKart.mesh.position.clone().add(offset);
         const backVec = new THREE.Vector3(-Math.sin(this.angle), 0, -Math.cos(this.angle));
-        this.createSpeedLineParticle(spawnPos, backVec, Math.random() > 0.5 ? 0xff007f : 0x06b6d4);
+        const colors = this.getAuraColors(this.playerAuraId);
+        this.createSpeedLineParticle(spawnPos, backVec, Math.random() > 0.5 ? colors.primary : colors.secondary);
       }
     } else {
       if (this.isDrifting) {

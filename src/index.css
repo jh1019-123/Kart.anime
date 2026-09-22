@@ -39,3 +39,217 @@ body {
   user-select: none;
 }
 
+/* === LOBBY DAZZLING BACKGROUND ANIMATIONS === */
+@keyframes lobbyGridFlow {
+  0% { background-position: 0 0; }
+  100% { background-position: 0 60px; }
+}
+
+@keyframes lobbyHorizonPulse {
+  0%, 100% { transform: scale(1) translateY(0px); opacity: 0.55; }
+  50% { transform: scale(1.15) translateY(-8px); opacity: 0.85; filter: blur(30px); }
+}
+
+@keyframes lobbyLaserSweep1 {
+  0% { transform: rotate(-25deg) translateY(-20px); opacity: 0.2; }
+  50% { transform: rotate(-10deg) translateY(10px); opacity: 0.7; }
+  100% { transform: rotate(-25deg) translateY(-20px); opacity: 0.2; }
+}
+
+@keyframes lobbyLaserSweep2 {
+  0% { transform: rotate(20deg) translateY(15px); opacity: 0.3; }
+  50% { transform: rotate(35deg) translateY(-15px); opacity: 0.8; }
+  100% { transform: rotate(20deg) translateY(15px); opacity: 0.3; }
+}
+
+@keyframes lobbyBeaconFloat {
+  0%, 100% { transform: translateY(0px) scaleY(1); opacity: 0.4; }
+  50% { transform: translateY(-15px) scaleY(1.2); opacity: 0.8; }
+}
+
+.animate-lobby-grid {
+  animation: lobbyGridFlow 3s linear infinite;
+}
+
+.animate-horizon-pulse {
+  animation: lobbyHorizonPulse 5s ease-in-out infinite;
+}
+
+.animate-laser-sweep1 {
+  animation: lobbyLaserSweep1 7s ease-in-out infinite;
+}
+
+.animate-laser-sweep2 {
+  animation: lobbyLaserSweep2 6s ease-in-out infinite;
+}
+
+.animate-beacon {
+  animation: lobbyBeaconFloat 4s ease-in-out infinite;
+}
+
+/* === DEDICATED SIGNATURE KART ANIMATIONS === */
+
+/* 1. Pink Thunder (커먼핑크) - Lively rabbit hop, vibration idle and cute forward thrust */
+@keyframes anim_pink_thunder {
+  0%, 100% {
+    transform: perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg) translateY(0px) translateX(0px);
+  }
+  20% {
+    transform: perspective(500px) rotateX(19deg) rotateY(-19deg) rotateZ(5deg) translateY(-8px) translateX(2px) scale(1.02);
+  }
+  40% {
+    transform: perspective(500px) rotateX(11deg) rotateY(-25deg) rotateZ(1deg) translateY(3px) translateX(8px) scale(1.04);
+  }
+  65% {
+    transform: perspective(500px) rotateX(17deg) rotateY(-20deg) rotateZ(4deg) translateY(-5px) translateX(3px);
+  }
+  85% {
+    transform: perspective(500px) rotateX(14deg) rotateY(-23deg) rotateZ(2deg) translateY(1px) translateX(-2px);
+  }
+}
+
+/* 2. Blue Lightning (크로스 윈드) - Aerodynamic electric dart, supersonic forward glide surges */
+@keyframes anim_blue_lightning {
+  0%, 100% {
+    transform: perspective(500px) rotateX(14deg) rotateY(-24deg) rotateZ(2deg) translateX(0px) translateY(0px);
+  }
+  25% {
+    transform: perspective(500px) rotateX(12deg) rotateY(-18deg) rotateZ(-3deg) translateX(14px) translateY(-5px) scale(1.03);
+  }
+  50% {
+    transform: perspective(500px) rotateX(16deg) rotateY(-26deg) rotateZ(4deg) translateX(18px) translateY(-3px) scale(1.02);
+  }
+  75% {
+    transform: perspective(500px) rotateX(13deg) rotateY(-21deg) rotateZ(0deg) translateX(-4px) translateY(2px);
+  }
+}
+
+/* 3. Golden Hero (브레이브칼리버) - Heroic wheelie ascension and majestic champion tilt */
+@keyframes anim_golden_hero {
+  0%, 100% {
+    transform: perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg) translateY(0px);
+  }
+  25% {
+    transform: perspective(500px) rotateX(28deg) rotateY(-17deg) rotateZ(-3deg) translateY(-15px) scale(1.06);
+  }
+  50% {
+    transform: perspective(500px) rotateX(25deg) rotateY(-23deg) rotateZ(2deg) translateY(-11px) scale(1.04);
+  }
+  75% {
+    transform: perspective(500px) rotateX(13deg) rotateY(-24deg) rotateZ(4deg) translateY(2px) scale(0.99);
+  }
+}
+
+/* 4. Neon Dragon (네온 페라리) - Hydraulic lowrider bounce and serpentine dragon sway */
+@keyframes anim_neon_dragon {
+  0%, 100% {
+    transform: perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg) translateY(0px) translateX(0px);
+  }
+  25% {
+    transform: perspective(500px) rotateX(18deg) rotateY(-29deg) rotateZ(8deg) translateY(-9px) translateX(-7px);
+  }
+  50% {
+    transform: perspective(500px) rotateX(10deg) rotateY(-15deg) rotateZ(-6deg) translateY(5px) translateX(7px);
+  }
+  75% {
+    transform: perspective(500px) rotateX(17deg) rotateY(-24deg) rotateZ(4deg) translateY(-4px) translateX(0px);
+  }
+}
+
+/* 5. Crimson Vortex (플린트) - Vortex backfire recoil shudder and explosive torque lunge */
+@keyframes anim_crimson_vortex {
+  0%, 100% {
+    transform: perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg) translateY(0px) translateX(0px);
+  }
+  15% {
+    transform: perspective(500px) rotateX(20deg) rotateY(-27deg) rotateZ(6deg) translateY(5px) translateX(-12px);
+  }
+  35% {
+    transform: perspective(500px) rotateX(9deg) rotateY(-15deg) rotateZ(-3deg) translateY(-13px) translateX(15px) scale(1.05);
+  }
+  65% {
+    transform: perspective(500px) rotateX(17deg) rotateY(-24deg) rotateZ(5deg) translateY(-3px) translateX(3px);
+  }
+}
+
+/* 6. Obsidian Shadow (다크 옵시디언) - Anti-gravity stealth hover and zero-G dimensional wave */
+@keyframes anim_obsidian_shadow {
+  0%, 100% {
+    transform: perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg) translateY(0px);
+    filter: drop-shadow(0 15px 25px rgba(0,0,0,0.9));
+  }
+  50% {
+    transform: perspective(500px) rotateX(11deg) rotateY(-32deg) rotateZ(8deg) translateY(-20px) scale(1.05);
+    filter: drop-shadow(0 28px 38px rgba(168,85,247,0.45));
+  }
+}
+
+/* 7. Emperor Absolute (디 아웃레이지 엠퍼러) - Imperial tachyon crown hover and royal gyroscopic levitation */
+@keyframes anim_emperor_absolute {
+  0%, 100% {
+    transform: perspective(500px) rotateX(14deg) rotateY(-22deg) rotateZ(3deg) translateY(-4px);
+    filter: drop-shadow(0 15px 25px rgba(234,179,8,0.35));
+  }
+  33% {
+    transform: perspective(500px) rotateX(9deg) rotateY(-15deg) rotateZ(-4deg) translateY(-24px) scale(1.08);
+    filter: drop-shadow(0 32px 42px rgba(234,179,8,0.75));
+  }
+  66% {
+    transform: perspective(500px) rotateX(19deg) rotateY(-29deg) rotateZ(7deg) translateY(-15px) scale(1.05);
+    filter: drop-shadow(0 24px 34px rgba(6,182,212,0.6));
+  }
+}
+
+/* 8. Outrage Supreme Dev (디 아웃레이지 얼티밋 디벨로퍼) - Quantum dimensional glitch hyper-jump */
+@keyframes anim_outrage_supreme_dev {
+  0%, 100% {
+    transform: perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg) translateY(0px) translateX(0px);
+  }
+  15% {
+    transform: perspective(500px) rotateX(11deg) rotateY(-16deg) rotateZ(-5deg) translateY(-18px) translateX(18px) skewX(-4deg) scale(1.08);
+    filter: drop-shadow(0 25px 40px rgba(255,0,85,0.8));
+  }
+  30% {
+    transform: perspective(500px) rotateX(21deg) rotateY(-26deg) rotateZ(7deg) translateY(4px) translateX(-9px) skewX(3deg);
+  }
+  55% {
+    transform: perspective(500px) rotateX(9deg) rotateY(-13deg) rotateZ(-2deg) translateY(-22px) translateX(12px) scale(1.06);
+    filter: drop-shadow(0 25px 40px rgba(0,255,204,0.8));
+  }
+  80% {
+    transform: perspective(500px) rotateX(17deg) rotateY(-25deg) rotateZ(4deg) translateY(-4px);
+  }
+}
+
+.kart-anim-pink_thunder {
+  animation: anim_pink_thunder 2.2s ease-in-out infinite;
+}
+
+.kart-anim-blue_lightning {
+  animation: anim_blue_lightning 1.8s ease-in-out infinite;
+}
+
+.kart-anim-golden_hero {
+  animation: anim_golden_hero 2.5s ease-in-out infinite;
+}
+
+.kart-anim-neon_dragon {
+  animation: anim_neon_dragon 2.4s ease-in-out infinite;
+}
+
+.kart-anim-crimson_vortex {
+  animation: anim_crimson_vortex 1.9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite;
+}
+
+.kart-anim-obsidian_shadow {
+  animation: anim_obsidian_shadow 3.2s ease-in-out infinite;
+}
+
+.kart-anim-emperor_absolute {
+  animation: anim_emperor_absolute 3.5s ease-in-out infinite;
+}
+
+.kart-anim-outrage_supreme_dev {
+  animation: anim_outrage_supreme_dev 1.6s ease-in-out infinite;
+}
+

@@ -426,12 +426,12 @@ export default function App() {
     setSelectedKartId(kartId);
     AudioEngine.playKartSelected();
     setKartSelectAnim(kartId);
-    triggerComicTextPop('READY!', '#06b6d4');
+    setActiveMenuTab(null); // Return directly to lobby screen so kart signature animation plays!
     const targetKart = KARTS.find(k => k.id === kartId);
-    showHUDNotification('카트 탑승 완료', `[${targetKart?.name || '카트'}] 기체에 탑승했습니다!`);
+    showHUDNotification('카트 탑승', `[${targetKart?.name || '카트'}] 탑승 완료`);
     setTimeout(() => {
       setKartSelectAnim(prev => prev === kartId ? null : prev);
-    }, 1400);
+    }, 1200);
   };
 
   const [achievements, setAchievements] = useState<Array<{
@@ -552,6 +552,7 @@ export default function App() {
   const [gameTimeFormatted, setGameTimeFormatted] = useState<string>('00:00.00');
   const [rivalProgress, setRivalProgress] = useState<number>(0);
   const [playerProgress, setPlayerProgress] = useState<number>(0);
+  const [countdownVal, setCountdownVal] = useState<number>(3);
   const [controlMode, setControlMode] = useState<'keyboard' | 'mobile' | null>(() => {
     return localStorage.getItem('kart_control_mode') as 'keyboard' | 'mobile' | null;
   });
@@ -1122,7 +1123,7 @@ export default function App() {
 
   // In-Game 60 FPS Loop
   useEffect(() => {
-    if (gameState !== 'playing') {
+    if (gameState !== 'playing' && gameState !== 'countdown') {
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
@@ -1137,8 +1138,11 @@ export default function App() {
     let frameCount = 0;
 
     const loop = () => {
-      if (engineRef.current && gameState === 'playing') {
-        const keysToSend: Record<string, any> = { ...keysPressedRef.current };
+      if (engineRef.current) {
+        if (gameState === 'countdown') {
+          engineRef.current.updateCountdownIdle();
+        } else if (gameState === 'playing') {
+          const keysToSend: Record<string, any> = { ...keysPressedRef.current };
         if (controlMode === 'mobile') {
           if (!keysToSend['ArrowDown']) {
             keysToSend['ArrowUp'] = true;
@@ -1227,8 +1231,9 @@ export default function App() {
 
         instance.render();
       }
-      animationFrameIdRef.current = requestAnimationFrame(loop);
-    };
+    }
+    animationFrameIdRef.current = requestAnimationFrame(loop);
+  };
 
     animationFrameIdRef.current = requestAnimationFrame(loop);
     return () => {
@@ -1280,6 +1285,7 @@ export default function App() {
     setTimeout(() => {
       // Transition to countdown after the matchup screen
       setGameState('countdown');
+      setCountdownVal(3);
       setCurrentLap(1);
       setSpeedVal(0);
       setBoosterGauge(0);
@@ -1288,179 +1294,186 @@ export default function App() {
       setShieldActive(false);
       setCrashCountThisRace(0);
 
+      if (canvasContainerRef.current) {
+        if (engineRef.current) {
+          engineRef.current.cleanup();
+        }
+
+        // Compute ghost configuration if selected
+        let ghostConfigParam = undefined;
+        if (selectedGhostMode !== 'none') {
+          let targetMs = 60000; // default 60s
+          let colorHex = 0x22d3ee; // cyan for my best
+          
+          if (selectedGhostMode === 'my_best') {
+            const personalBest = bestTimes[activeMap.id];
+            targetMs = personalBest ? personalBest.timeMs : 75000;
+            colorHex = 0x22d3ee; // cyan
+          } else if (selectedGhostMode === 'friend_ghost') {
+            const pTimes: Record<string, number> = {
+              neon_sky_way: 63500,
+              cyberspace_tunnel: 74200,
+              cosmic_highway: 81100,
+              lava_crevice: 71500,
+              frozen_glacier: 76800,
+            };
+            targetMs = pTimes[activeMap.id] || 75000;
+            colorHex = 0xd946ef; // magenta/pink
+          } else if (selectedGhostMode === 'rival_1st') {
+            const pTimes: Record<string, number> = {
+              neon_sky_way: 52000,
+              cyberspace_tunnel: 61000,
+              cosmic_highway: 69000,
+              lava_crevice: 58000,
+              frozen_glacier: 64000,
+            };
+            targetMs = pTimes[activeMap.id] || 55000;
+            colorHex = 0xeab308; // gorgeous gold
+          }
+          
+          // Adjust factor according to gameMode lap multiplier limits
+          const baseLaps = 3;
+          const activeLaps = activeGameMode === 'time_attack' ? 1 : activeGameMode === 'ten_laps' ? 10 : 3;
+          targetMs = Math.round(targetMs * (activeLaps / baseLaps));
+
+          ghostConfigParam = {
+            isGhost: true,
+            targetTimeMs: targetMs,
+            ghostColorHex: colorHex
+          };
+        }
+
+        // Select a cool AI rival kart ID
+        const otherKarts = KARTS.filter(k => k.id !== currentKart.id);
+        const aiSelectedKart = otherKarts[Math.floor(Math.random() * otherKarts.length)] || KARTS[0];
+        const aiSelectedId = aiSelectedKart.id;
+
+        engineRef.current = new GameEngine(
+          canvasContainerRef.current,
+          activeMap,
+          activeKartColor,
+          activeKartFlameColor,
+          selectedGhostMode !== 'none' ? (ghostConfigParam?.ghostColorHex || aiSelectedKart.color) : aiSelectedKart.color,
+          getUpgradedStats(currentKart.stats),
+          (lap) => {
+            setCurrentLap(lap);
+            triggerComicTextPop(`LAP ${lap}!`, '#22d3ee');
+            const finalLapNumber = activeGameMode === 'time_attack' ? 1 : activeGameMode === 'ten_laps' ? 10 : 3;
+            if (lap === finalLapNumber) {
+              showHUDNotification('FINAL LAP 돌입!', '마지막 완주를 시작하세요!');
+            } else {
+              showHUDNotification(`LAP ${lap} 진입!`, '페이스를 높여 가속하세요!');
+            }
+          },
+          (speed) => setSpeedVal(speed),
+          (gauge) => setBoosterGauge(gauge),
+          (stock) => setBoosterStock(stock),
+          () => {
+            if (activeGameMode === 'item') {
+              triggerItemAcquisition();
+            }
+          },
+          (playerWon, finalTime) => {
+            concludeRaceOutcome(playerWon, finalTime);
+          },
+          () => {
+            triggerComicTextPop('AI CRASH!', '#a855f7');
+            showHUDNotification('피격 성공!', '라이벌 기체를 스핀시켰습니다.');
+          },
+          () => {
+            triggerComicTextPop('CRASH!', '#ef4444');
+            showHUDNotification('충돌 발생!', '벽이나 유도 트랩에 충돌했습니다.');
+            setCrashCountThisRace(prev => prev + 1);
+          },
+          ghostConfigParam,
+          activeGameMode,
+          selectedAuraId,
+          currentKart.id,
+          aiSelectedId
+        );
+
+        // Dynamically assign participant index for relay mode
+        engineRef.current.myParticipantIndex = participants.findIndex(p => p.peerId === netManagerRef.current?.myInfo.peerId);
+        if (engineRef.current.myParticipantIndex === -1) {
+          engineRef.current.myParticipantIndex = 0;
+        }
+
+        // Set coin collected callback inside Coin Rush Mode
+        engineRef.current.onCoinCollected = () => {
+          setGold(prev => prev + 3);
+          triggerComicTextPop('+3 GOLD!', '#ffb700');
+        };
+
+        engineRef.current.onPaintTurfRatio = (ratio) => {
+          setPaintTurfRatio(ratio);
+        };
+
+        engineRef.current.onFlagScoreChange = (playerScore, aiScore) => {
+          setPlayerFlagsCollected(playerScore);
+          setAiFlagsCollected(aiScore);
+        };
+
+        engineRef.current.onShootMissile = (targetPeerId) => {
+          if (netManagerRef.current && isMultiplayerActive) {
+            netManagerRef.current.sendItemAction({
+              itemType: 'missile',
+              targetPeerId
+            });
+          }
+        };
+
+        engineRef.current.onDropBanana = (pos) => {
+          if (netManagerRef.current && isMultiplayerActive) {
+            netManagerRef.current.sendItemAction({
+              itemType: 'banana',
+              x: pos.x,
+              y: pos.y,
+              z: pos.z
+            });
+          }
+        };
+
+        if (activeGameMode === 'time_attack') {
+          engineRef.current.maxLaps = 1;
+        } else if (activeGameMode === 'ten_laps') {
+          engineRef.current.maxLaps = 10;
+        } else {
+          engineRef.current.maxLaps = 3;
+        }
+
+        engineRef.current.isSuperNitro = false;
+        engineRef.current.gameMode = activeGameMode;
+        engineRef.current.onComicPopup = (text: string, color: string) => {
+          triggerComicTextPop(text, color);
+        };
+        engineRef.current.onHUDNotification = (title: string, body: string) => {
+          showHUDNotification(title, body);
+        };
+        engineRef.current.onRivalCountdownChange = (sec: number | null) => {
+          setRivalCountdown(sec);
+        };
+
+        // Render immediately so starting grid & kart are visible!
+        engineRef.current.updateCountdownIdle();
+      }
+
       let count = 3;
-      triggerComicTextPop(`${count}`, '#eab308');
+      setCountdownVal(3);
+      triggerComicTextPop('3', '#eab308');
       AudioEngine.playItemPickup();
 
       const timer = setInterval(() => {
         count--;
+        setCountdownVal(count);
         if (count > 0) {
-          triggerComicTextPop(`${count}`, '#eab308');
+          triggerComicTextPop(`${count}`, count === 1 ? '#f43f5e' : '#eab308');
           AudioEngine.playItemPickup();
         } else {
-          triggerComicTextPop('GO!', '#f43f5e');
+          triggerComicTextPop('GO!', '#34d399');
           AudioEngine.playBoost();
           
-          if (canvasContainerRef.current) {
-            if (engineRef.current) {
-              engineRef.current.cleanup();
-            }
-
-            // Compute ghost configuration if selected
-            let ghostConfigParam = undefined;
-            if (selectedGhostMode !== 'none') {
-              let targetMs = 60000; // default 60s
-              let colorHex = 0x22d3ee; // cyan for my best
-              
-              if (selectedGhostMode === 'my_best') {
-                const personalBest = bestTimes[activeMap.id];
-                targetMs = personalBest ? personalBest.timeMs : 75000;
-                colorHex = 0x22d3ee; // cyan
-              } else if (selectedGhostMode === 'friend_ghost') {
-                const pTimes: Record<string, number> = {
-                  neon_sky_way: 63500,
-                  cyberspace_tunnel: 74200,
-                  cosmic_highway: 81100,
-                  lava_crevice: 71500,
-                  frozen_glacier: 76800,
-                };
-                targetMs = pTimes[activeMap.id] || 75000;
-                colorHex = 0xd946ef; // magenta/pink
-              } else if (selectedGhostMode === 'rival_1st') {
-                const pTimes: Record<string, number> = {
-                  neon_sky_way: 52000,
-                  cyberspace_tunnel: 61000,
-                  cosmic_highway: 69000,
-                  lava_crevice: 58000,
-                  frozen_glacier: 64000,
-                };
-                targetMs = pTimes[activeMap.id] || 55000;
-                colorHex = 0xeab308; // gorgeous gold
-              }
-              
-              // Adjust factor according to gameMode lap multiplier limits
-              const baseLaps = 3;
-              const activeLaps = activeGameMode === 'time_attack' ? 1 : activeGameMode === 'ten_laps' ? 10 : 3;
-              targetMs = Math.round(targetMs * (activeLaps / baseLaps));
-
-              ghostConfigParam = {
-                isGhost: true,
-                targetTimeMs: targetMs,
-                ghostColorHex: colorHex
-              };
-            }
-
-            // Select a cool AI rival kart ID
-            const otherKarts = KARTS.filter(k => k.id !== currentKart.id);
-            const aiSelectedKart = otherKarts[Math.floor(Math.random() * otherKarts.length)] || KARTS[0];
-            const aiSelectedId = aiSelectedKart.id;
-
-            engineRef.current = new GameEngine(
-              canvasContainerRef.current,
-              activeMap,
-              activeKartColor,
-              activeKartFlameColor,
-              selectedGhostMode !== 'none' ? (ghostConfigParam?.ghostColorHex || aiSelectedKart.color) : aiSelectedKart.color,
-              getUpgradedStats(currentKart.stats),
-              (lap) => {
-                setCurrentLap(lap);
-                triggerComicTextPop(`LAP ${lap}!`, '#22d3ee');
-                const finalLapNumber = activeGameMode === 'time_attack' ? 1 : activeGameMode === 'ten_laps' ? 10 : 3;
-                if (lap === finalLapNumber) {
-                  showHUDNotification('FINAL LAP 돌입!', '마지막 완주를 시작하세요!');
-                } else {
-                  showHUDNotification(`LAP ${lap} 진입!`, '페이스를 높여 가속하세요!');
-                }
-              },
-              (speed) => setSpeedVal(speed),
-              (gauge) => setBoosterGauge(gauge),
-              (stock) => setBoosterStock(stock),
-              () => {
-                if (activeGameMode === 'item') {
-                  triggerItemAcquisition();
-                }
-              },
-              (playerWon, finalTime) => {
-                concludeRaceOutcome(playerWon, finalTime);
-              },
-              () => {
-                triggerComicTextPop('AI CRASH!', '#a855f7');
-                showHUDNotification('피격 성공!', '라이벌 기체를 스핀시켰습니다.');
-              },
-              () => {
-                triggerComicTextPop('CRASH!', '#ef4444');
-                showHUDNotification('충돌 발생!', '벽이나 유도 트랩에 충돌했습니다.');
-                setCrashCountThisRace(prev => prev + 1);
-              },
-              ghostConfigParam,
-              activeGameMode,
-              selectedAuraId,
-              currentKart.id,
-              aiSelectedId
-            );
-
-            // Dynamically assign participant index for relay mode
-            engineRef.current.myParticipantIndex = participants.findIndex(p => p.peerId === netManagerRef.current?.myInfo.peerId);
-            if (engineRef.current.myParticipantIndex === -1) {
-              engineRef.current.myParticipantIndex = 0;
-            }
-
-            // Set coin collected callback inside Coin Rush Mode
-            engineRef.current.onCoinCollected = () => {
-              setGold(prev => prev + 3);
-              triggerComicTextPop('+3 GOLD!', '#ffb700');
-            };
-
-            engineRef.current.onPaintTurfRatio = (ratio) => {
-              setPaintTurfRatio(ratio);
-            };
-
-            engineRef.current.onFlagScoreChange = (playerScore, aiScore) => {
-              setPlayerFlagsCollected(playerScore);
-              setAiFlagsCollected(aiScore);
-            };
-
-            engineRef.current.onShootMissile = (targetPeerId) => {
-              if (netManagerRef.current && isMultiplayerActive) {
-                netManagerRef.current.sendItemAction({
-                  itemType: 'missile',
-                  targetPeerId
-                });
-              }
-            };
-
-            engineRef.current.onDropBanana = (pos) => {
-              if (netManagerRef.current && isMultiplayerActive) {
-                netManagerRef.current.sendItemAction({
-                  itemType: 'banana',
-                  x: pos.x,
-                  y: pos.y,
-                  z: pos.z
-                });
-              }
-            };
-
-            if (activeGameMode === 'time_attack') {
-              engineRef.current.maxLaps = 1;
-            } else if (activeGameMode === 'ten_laps') {
-              engineRef.current.maxLaps = 10;
-            } else {
-              engineRef.current.maxLaps = 3;
-            }
-
-            engineRef.current.isSuperNitro = false;
-            engineRef.current.gameMode = activeGameMode;
-            engineRef.current.onComicPopup = (text: string, color: string) => {
-              triggerComicTextPop(text, color);
-            };
-            engineRef.current.onHUDNotification = (title: string, body: string) => {
-              showHUDNotification(title, body);
-            };
-            engineRef.current.onRivalCountdownChange = (sec: number | null) => {
-              setRivalCountdown(sec);
-            };
+          if (engineRef.current) {
             engineRef.current.activateEngine();
-            
             if (AudioEngine.ctx) {
               AudioEngine.playEngine(0.15);
             }
@@ -2344,41 +2357,55 @@ export default function App() {
 
       {/* --- MAIN LOBBY NAVIGATION CONTROL PANEL --- */}
       {gameState === 'lobby' && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-between bg-gradient-to-b from-[#030712] via-[#0b1329] to-[#030712] px-4 md:px-8 py-4 overflow-y-auto normal-scrollbar select-none">
-          {/* Cybernetic High-Tech Racing Background with multiple natural parallax elements */}
+        <div className="absolute inset-0 z-50 flex flex-col justify-between bg-gradient-to-b from-[#02040a] via-[#070e24] to-[#02040a] px-4 md:px-8 py-4 overflow-y-auto normal-scrollbar select-none">
+          {/* Cybernetic High-Tech Racing Background with glamorous lighting and motion */}
           <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            {/* Perspective wireframe grid */}
-            <div 
-              className="absolute inset-0 opacity-20" 
-              style={{ 
-                backgroundImage: 'radial-gradient(circle at center, transparent 30%, rgba(2, 6, 23, 0.95) 100%), linear-gradient(0deg, transparent 24%, rgba(6, 182, 212, 0.15) 25%, rgba(6, 182, 212, 0.15) 26%, transparent 27%, transparent 74%, rgba(6, 182, 212, 0.15) 75%, rgba(6, 182, 212, 0.15) 76%, transparent 77%), linear-gradient(90deg, transparent 24%, rgba(6, 182, 212, 0.15) 25%, rgba(6, 182, 212, 0.15) 26%, transparent 27%, transparent 74%, rgba(6, 182, 212, 0.15) 75%, rgba(6, 182, 212, 0.15) 76%, transparent 77%)', 
-                backgroundSize: '48px 48px' 
-              }}
-            />
-            
-            {/* Glowing neon ambient orbs floating/glowing dynamically */}
-            <div className="absolute top-[12%] left-[15%] w-96 h-96 rounded-full bg-indigo-500/10 filter blur-[100px] animate-pulse" style={{ animationDuration: '7s' }} />
-            <div className="absolute bottom-[10%] right-[10%] w-[450px] h-[450px] rounded-full bg-cyan-500/10 filter blur-[120px] animate-pulse" style={{ animationDuration: '10s' }} />
-            <div className="absolute top-[40%] left-[50%] -translate-x-1/2 w-[600px] h-32 rounded-full bg-blue-500/5 filter blur-[80px] animate-pulse" style={{ animationDuration: '14s' }} />
+            {/* Cosmic Aurora dynamic sky shimmer */}
+            <div className="absolute inset-0 opacity-45 animate-lobby-aurora bg-gradient-to-r from-purple-900/30 via-cyan-900/25 to-pink-900/30 filter blur-3xl" />
 
-            {/* Racetrack diagonal speed vectors / warm glowing stripes */}
-            <div className="absolute bottom-[-150px] left-[-100px] w-[500px] h-[300px] bg-gradient-to-tr from-yellow-500/10 to-transparent skew-x-[-30deg] border-r-4 border-yellow-500/20" />
-            <div className="absolute top-[-50px] right-[-100px] w-[600px] h-[250px] bg-gradient-to-bl from-pink-500/10 to-transparent skew-x-[-30deg] border-l-4 border-pink-500/20" />
+            {/* Glowing Retro-Futuristic Cyber Horizon Sun */}
+            <div className="absolute top-[8%] left-1/2 -translate-x-1/2 w-[550px] h-[280px] rounded-t-full bg-gradient-to-b from-yellow-400/25 via-pink-500/20 to-transparent filter blur-2xl pointer-events-none" />
+            <div className="absolute top-[18%] left-1/2 -translate-x-1/2 w-[380px] h-[190px] rounded-t-full bg-gradient-to-b from-yellow-300/30 via-red-500/15 to-transparent border-t-2 border-yellow-300/40 pointer-events-none shadow-[0_0_80px_rgba(250,204,21,0.35)]" />
 
-            {/* Matrix dotted tech grid */}
-            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle, #0891b2 1px, transparent 1px)', backgroundSize: '16px 16px' }} />
+            {/* Infinite 3D Animated Cyber Grid (Floor Plane) */}
+            <div className="absolute inset-x-0 bottom-0 h-[65%] overflow-hidden perspective-[600px] pointer-events-none">
+              <div 
+                className="absolute inset-0 origin-bottom transform-gpu rotate-x-[68deg] opacity-55 animate-lobby-grid"
+                style={{
+                  backgroundImage: `
+                    linear-gradient(to right, rgba(6, 182, 212, 0.45) 1.5px, transparent 1.5px),
+                    linear-gradient(to bottom, rgba(236, 72, 153, 0.35) 1.5px, transparent 1.5px)
+                  `,
+                  backgroundSize: '44px 44px',
+                  boxShadow: 'inset 0 100px 140px rgba(2, 4, 10, 0.95)'
+                }}
+              />
+              {/* Floor Horizon Neon Glow Line */}
+              <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-transparent via-cyan-400 to-transparent shadow-[0_0_35px_#22d3ee]" />
+            </div>
 
-            {/* Circuit line accents to depict racing paths */}
-            <svg className="absolute inset-0 w-full h-full opacity-15" xmlns="http://www.w3.org/2000/svg">
+            {/* Animated Laser Speed Lines / Streaks zooming across */}
+            <div className="absolute top-[35%] left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent animate-pulse" style={{ animationDuration: '2s' }} />
+            <div className="absolute top-[52%] left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-pink-500/60 to-transparent animate-pulse" style={{ animationDuration: '3.2s' }} />
+            <div className="absolute top-[22%] left-[-20%] w-[140%] h-[1px] bg-gradient-to-r from-transparent via-yellow-400/40 to-transparent transform -rotate-6 animate-pulse" />
+
+            {/* Glowing Neon Ambient Energy Nodes */}
+            <div className="absolute top-[10%] left-[8%] w-96 h-96 rounded-full bg-cyan-500/15 filter blur-[90px] animate-pulse" style={{ animationDuration: '6s' }} />
+            <div className="absolute bottom-[15%] right-[5%] w-[500px] h-[500px] rounded-full bg-pink-500/15 filter blur-[110px] animate-pulse" style={{ animationDuration: '8s' }} />
+            <div className="absolute top-[45%] left-[50%] -translate-x-1/2 w-[700px] h-44 rounded-full bg-indigo-500/15 filter blur-[80px] animate-pulse" style={{ animationDuration: '10s' }} />
+
+            {/* High-Tech Racing Cyber Circuit Graphics */}
+            <svg className="absolute inset-0 w-full h-full opacity-30 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
               <defs>
-                <linearGradient id="circGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#ec4899" stopOpacity="0.2" />
-                  <stop offset="50%" stopColor="#06b6d4" stopOpacity="0.5" />
-                  <stop offset="100%" stopColor="#ec4899" stopOpacity="0.1" />
+                <linearGradient id="neonLaserGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#22d3ee" stopOpacity="0.8" />
+                  <stop offset="50%" stopColor="#ec4899" stopOpacity="0.9" />
+                  <stop offset="100%" stopColor="#eab308" stopOpacity="0.8" />
                 </linearGradient>
               </defs>
-              <path d="M -100 200 L 400 200 L 600 400 L 1200 400 L 1400 200 L 2000 200" fill="none" stroke="url(#circGrad)" strokeWidth="2" strokeDasharray="10 15" />
-              <path d="M -100 500 L 300 500 L 500 700 L 1500 700 L 1700 500 L 2000 500" fill="none" stroke="url(#circGrad)" strokeWidth="1.5" strokeDasharray="5 10" />
+              <circle cx="50%" cy="40%" r="280" fill="none" stroke="url(#neonLaserGrad)" strokeWidth="1" strokeDasharray="8 12" className="animate-spin" style={{ animationDuration: '90s' }} />
+              <circle cx="50%" cy="40%" r="380" fill="none" stroke="#06b6d4" strokeWidth="0.8" strokeDasharray="14 20" opacity="0.4" className="animate-spin" style={{ animationDuration: '130s', animationDirection: 'reverse' }} />
+              <path d="M 0 350 L 320 350 L 480 500 L 1100 500 L 1260 350 L 2200 350" fill="none" stroke="url(#neonLaserGrad)" strokeWidth="1.5" strokeDasharray="8 8" />
             </svg>
           </div>
           
@@ -2659,18 +2686,11 @@ export default function App() {
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(6,182,212,0.06)_0%,transparent_70%)] pointer-events-none" />
                 <div className="absolute -top-10 -left-10 w-40 h-40 rounded-full bg-pink-500/5 filter blur-3xl pointer-events-none" />
                 
-                {/* Dedicated Kart Selection Visual Animation Overlay */}
+                {/* Subtle top-corner status indicator - does NOT block or cover the kart at all */}
                 {kartSelectAnim === currentKart.id && (
-                  <div className="absolute inset-0 z-30 pointer-events-none flex flex-col items-center justify-center bg-cyan-950/40 backdrop-blur-[2px] animate-fadeIn">
-                    <div className="flex flex-col items-center space-y-2 animate-bounce">
-                      <div className="px-4 py-1.5 rounded-full bg-slate-950/95 border-2 border-cyan-400 text-cyan-300 font-black text-xs font-mono shadow-[0_0_25px_rgba(6,182,212,0.95)] tracking-wider flex items-center space-x-2">
-                        <Sparkles size={14} className="text-yellow-400 animate-spin" />
-                        <span>카트 선택 완료! (READY)</span>
-                      </div>
-                      <span className="text-[11px] text-yellow-300 font-mono font-black drop-shadow-[0_0_10px_rgba(253,224,71,0.9)]">
-                        🚀 탑승 기체 동조 완료!
-                      </span>
-                    </div>
+                  <div className="absolute top-3 right-3 z-20 pointer-events-none flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-950/90 border border-cyan-400 text-cyan-300 text-[10px] font-mono font-black shadow-[0_0_15px_rgba(6,182,212,0.8)] animate-pulse">
+                    <Sparkles size={11} className="text-yellow-400 animate-spin" />
+                    <span>장착 완료</span>
                   </div>
                 )}
 
@@ -2707,9 +2727,9 @@ export default function App() {
                     }} 
                   />
 
-                  {/* 3D-angled Glass Perspective Kart wrapper */}
+                  {/* 3D-angled Glass Perspective Kart wrapper - fully unobscured signature motion */}
                   <div 
-                    className="relative w-56 h-36 flex items-center justify-center transform transition-all duration-300"
+                    className={`relative w-56 h-36 flex items-center justify-center transform transition-all duration-500 kart-anim-${currentKart.id}`}
                     style={{
                       transform: 'perspective(500px) rotateX(15deg) rotateY(-22deg) rotateZ(3deg)'
                     }}
@@ -5491,7 +5511,7 @@ export default function App() {
                                     triggerAudioInit();
                                     setSelectedMapId(activeMap.id);
                                     setActiveMenuTab(null);
-                                    startGame();
+                                    launchRace(false, activeMap.id);
                                   }}
                                   className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-slate-950 font-black text-xs rounded-xl shadow-lg cursor-pointer transition-all active:scale-95"
                                 >
@@ -6311,11 +6331,58 @@ CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHEC
         </div>
       )}
 
-      {/* --- COUNTDOWN LAYER --- */}
+      {/* --- COUNTDOWN LAYER (TRANSPARENT OVER LIVE 3D VEHICLE VIEW) --- */}
       {gameState === 'countdown' && (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/85 select-none font-display text-8xl md:text-9xl text-pink-500 font-black">
-          <div className="comic-text animate-ping">
-            {comicPop ? comicPop.text : 'READY'}
+        <div className="absolute inset-0 z-40 pointer-events-none flex flex-col items-center justify-between p-6 select-none font-display">
+          {/* Subtle top/bottom cinematic racing letterbox vignette */}
+          <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/60 to-transparent pointer-events-none" />
+          <div className="absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t from-black/70 via-black/30 to-transparent pointer-events-none" />
+
+          {/* Top Starting Gantry Lights (Arcade & F1 style) */}
+          <div className="relative z-10 mt-6 flex flex-col items-center animate-bounce" style={{ animationDuration: '2.5s' }}>
+            <div className="bg-slate-950/85 backdrop-blur-md px-6 py-2.5 rounded-2xl border-2 border-slate-700/80 shadow-[0_0_35px_rgba(0,0,0,0.85)] flex items-center space-x-4">
+              <span className="text-[11px] font-black text-cyan-400 font-mono tracking-widest uppercase">GRID STATUS</span>
+              <div className="flex space-x-3 items-center">
+                <div className={`w-7 h-7 rounded-full border-2 transition-all duration-300 ${
+                  countdownVal <= 3 ? 'bg-red-500 border-red-300 shadow-[0_0_20px_rgba(239,68,68,0.95)]' : 'bg-red-950/60 border-red-900/60'
+                }`} />
+                <div className={`w-7 h-7 rounded-full border-2 transition-all duration-300 ${
+                  countdownVal <= 2 ? 'bg-yellow-400 border-yellow-200 shadow-[0_0_20px_rgba(250,204,21,0.95)]' : 'bg-yellow-950/60 border-yellow-900/60'
+                }`} />
+                <div className={`w-7 h-7 rounded-full border-2 transition-all duration-300 ${
+                  countdownVal <= 1 ? 'bg-yellow-400 border-yellow-200 shadow-[0_0_20px_rgba(250,204,21,0.95)]' : 'bg-yellow-950/60 border-yellow-900/60'
+                }`} />
+                <div className={`w-7 h-7 rounded-full border-2 transition-all duration-300 ${
+                  countdownVal === 0 ? 'bg-emerald-400 border-emerald-200 shadow-[0_0_30px_rgba(52,211,153,1)] scale-110' : 'bg-emerald-950/60 border-emerald-900/60'
+                }`} />
+              </div>
+            </div>
+          </div>
+
+          {/* Center 3D Countdown Display */}
+          <div className="relative z-10 flex flex-col items-center justify-center my-auto transform -translate-y-4">
+            <div 
+              key={countdownVal}
+              className={`text-8xl md:text-9xl font-black italic tracking-tighter comic-text transition-all transform scale-110 animate-pulse ${
+                countdownVal === 0 
+                  ? 'text-emerald-400 drop-shadow-[0_0_50px_rgba(52,211,153,0.9)]'
+                  : countdownVal === 1 
+                    ? 'text-pink-500 drop-shadow-[0_0_40px_rgba(244,63,94,0.9)]'
+                    : countdownVal === 2 
+                      ? 'text-yellow-400 drop-shadow-[0_0_40px_rgba(250,204,21,0.9)]'
+                      : 'text-cyan-400 drop-shadow-[0_0_40px_rgba(6,182,212,0.9)]'
+              }`}
+            >
+              {countdownVal === 0 ? 'GO!!' : countdownVal}
+            </div>
+            <div className="mt-4 bg-slate-950/80 backdrop-blur-md px-5 py-1.5 rounded-full border border-white/15 text-xs md:text-sm font-black text-white/95 tracking-widest font-sans uppercase shadow-lg">
+              {countdownVal === 0 ? '🚀 START ACCELERATING!' : '🏎️ START YOUR ENGINES...'}
+            </div>
+          </div>
+
+          {/* Bottom helper tip */}
+          <div className="relative z-10 mb-6 bg-slate-950/85 backdrop-blur-md px-5 py-2 rounded-full border border-slate-700/80 text-[11px] font-sans font-bold text-slate-200 shadow-xl">
+            출발 신호에 맞춰 <span className="text-yellow-400 font-extrabold">↑ 키</span> 또는 <span className="text-cyan-400 font-extrabold">W 키</span>를 연타하여 스타트 대시를 터뜨리세요!
           </div>
         </div>
       )}

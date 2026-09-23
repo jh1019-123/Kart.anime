@@ -177,3 +177,68 @@ export async function saveLiveCloudRanking(newRecord: Omit<CloudRankingItem, 'id
     }
   }
 }
+
+/**
+ * Update player name across all recorded entries in the cloud
+ */
+export async function updatePlayerNameInCloud(oldName: string, newName: string): Promise<CloudRankingItem[]> {
+  if (!oldName || !newName || oldName === newName) {
+    return [];
+  }
+
+  try {
+    let existingList: CloudRankingItem[] = [];
+    try {
+      const res = await fetch(CLOUD_URL, { cache: 'no-cache' });
+      if (res.ok) {
+        const json = await res.json();
+        existingList = json?.data?.records || [];
+      }
+    } catch {}
+
+    if (existingList.length === 0) {
+      const cached = localStorage.getItem('kart_real_players_leaderboard');
+      if (cached) existingList = JSON.parse(cached);
+    }
+
+    let modified = false;
+    const updated = existingList.map(item => {
+      if (item.playerName === oldName || item.playerName.includes(oldName)) {
+        modified = true;
+        return {
+          ...item,
+          playerName: newName
+        };
+      }
+      return item;
+    });
+
+    if (!modified) {
+      return updated;
+    }
+
+    // Save to local cache immediately
+    localStorage.setItem('kart_real_players_leaderboard', JSON.stringify(updated));
+
+    // Push update to cloud
+    await fetch(CLOUD_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        name: 'real_players_leaderboard_live',
+        data: {
+          records: updated
+        }
+      })
+    });
+
+    return updated;
+  } catch (err) {
+    console.warn('Could not update player name in cloud:', err);
+    return [];
+  }
+}
+

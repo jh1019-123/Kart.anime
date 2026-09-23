@@ -37,8 +37,8 @@ import { KartRadarChart } from './components/KartRadarChart';
 import { DecalPainter } from './components/DecalPainter';
 import { MiniKartRenderer } from './components/MiniKartRenderer';
 import { PeerNetworkManager } from './network';
-import { isSupabaseConfigured, fetchRankingsFromSupabase, saveRankingToSupabase } from './supabase';
-import { fetchLiveCloudRankings, saveLiveCloudRanking, CloudRankingItem, isBotPlayer } from './cloudLeaderboard';
+import { isSupabaseConfigured, fetchRankingsFromSupabase, saveRankingToSupabase, updatePlayerNameInSupabase, SUPABASE_SETUP_SQL } from './supabase';
+import { fetchLiveCloudRankings, saveLiveCloudRanking, updatePlayerNameInCloud, CloudRankingItem, isBotPlayer } from './cloudLeaderboard';
 import { GachaRoulette } from './components/GachaRoulette';
 import { PastelTierRanking } from './components/PastelTierRanking';
 
@@ -732,6 +732,64 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem('anime_claimed_kart_titles', JSON.stringify(claimedKartTitles));
   }, [claimedKartTitles]);
+
+  // Persistent storage of player name
+  useEffect(() => {
+    if (playerNameInput && playerNameInput.trim()) {
+      localStorage.setItem('network_player_name', playerNameInput.trim());
+      localStorage.setItem('anime_player_name', playerNameInput.trim());
+    }
+  }, [playerNameInput]);
+
+  const handleApplyPlayerName = async (newName: string) => {
+    const trimmed = (newName || '').trim();
+    if (!trimmed) {
+      showHUDNotification('이름 입력 필요', '라이더 이름을 1자 이상 입력해주세요.');
+      return;
+    }
+    if (trimmed.length > 12) {
+      showHUDNotification('이름 길이 초과', '라이더 이름은 최대 12글자까지 가능합니다.');
+      return;
+    }
+    const oldName = playerNameInput;
+    setPlayerNameInput(trimmed);
+    localStorage.setItem('network_player_name', trimmed);
+    localStorage.setItem('anime_player_name', trimmed);
+
+    if (netManagerRef.current && netManagerRef.current.myInfo) {
+      netManagerRef.current.myInfo.name = trimmed;
+    }
+
+    // 1. Update local leaderboard state
+    setLeaderboard(prev => {
+      const updated = prev.map(item => {
+        if (item.isPlayer || item.playerName === oldName || item.playerName.includes(oldName)) {
+          return { ...item, playerName: trimmed };
+        }
+        return item;
+      });
+      localStorage.setItem('kart_real_players_leaderboard', JSON.stringify(updated));
+      return updated;
+    });
+
+    // 2. Synchronize rename across Cloud Leaderboard & Supabase
+    try {
+      await updatePlayerNameInCloud(oldName, trimmed);
+    } catch (e) {
+      console.warn('Cloud rename failed:', e);
+    }
+
+    try {
+      await updatePlayerNameInSupabase(oldName, trimmed);
+    } catch (e) {
+      console.warn('Supabase rename failed:', e);
+    }
+
+    showHUDNotification('라이더 이름 변경 완료', `'${trimmed}' (으)로 모든 리더보드 및 전광판에 즉시 적용되었습니다!`);
+    try {
+      AudioEngine.playClick();
+    } catch {}
+  };
 
   // Unified progression & helper functions
   const getTierInfo = (points: number) => {
@@ -2561,15 +2619,29 @@ export default function App() {
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-gray-200 font-bold uppercase flex items-center">
-                    <User size={11} className="mr-1.5 text-amber-400" />
+                  <div className="text-[11px] text-gray-200 font-bold uppercase flex items-center gap-1">
+                    <User size={11} className="text-amber-400 shrink-0" />
                     <input 
                       type="text" 
                       value={playerNameInput}
                       onChange={(e) => setPlayerNameInput(e.target.value)}
-                      className="bg-transparent text-white outline-none border-b border-dashed border-amber-500/40 focus:border-amber-400 font-bold py-0.5 text-xs w-28 font-sans transition-all"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleApplyPlayerName(playerNameInput);
+                        }
+                      }}
+                      onBlur={() => handleApplyPlayerName(playerNameInput)}
+                      className="bg-slate-900/80 px-1.5 py-0.5 rounded text-white outline-none border border-amber-500/40 focus:border-amber-400 font-bold text-xs w-28 font-sans transition-all"
                       placeholder="라이더 이름"
+                      title="이름 입력 후 엔터(Enter)를 누르면 리더보드에 즉시 반영됩니다"
                     />
+                    <button
+                      onClick={() => handleApplyPlayerName(playerNameInput)}
+                      title="이름 변경 저장 및 리더보드 반영"
+                      className="px-1.5 py-0.5 bg-amber-500/20 hover:bg-amber-500/40 text-amber-300 rounded border border-amber-500/30 text-[9px] font-black cursor-pointer transition-colors"
+                    >
+                      적용
+                    </button>
                   </div>
                   <div className="flex items-center text-yellow-400 font-extrabold text-xs leading-none mt-1.5">
                     <Coins className="mr-1.5 text-yellow-400 animate-pulse" size={13} />
@@ -5215,7 +5287,24 @@ export default function App() {
                                   </span>
                                 )}
                               </div>
-                              <h4 className="text-sm font-black text-white mt-0.5">{playerNameInput}</h4>
+                              <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                <input
+                                  type="text"
+                                  value={playerNameInput}
+                                  onChange={(e) => setPlayerNameInput(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleApplyPlayerName(playerNameInput);
+                                  }}
+                                  className="bg-slate-900 border border-slate-700 focus:border-amber-400 text-white font-black text-xs px-2 py-0.5 rounded outline-none w-32"
+                                  placeholder="라이더 이름"
+                                />
+                                <button
+                                  onClick={() => handleApplyPlayerName(playerNameInput)}
+                                  className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[10px] px-2 py-1 rounded transition-colors cursor-pointer shadow"
+                                >
+                                  이름 변경 저장
+                                </button>
+                              </div>
                             </div>
                           </div>
 
@@ -5746,44 +5835,16 @@ export default function App() {
                                 <span className="text-yellow-400 font-bold">📋 Supabase Table & RLS Setup SQL Script</span>
                                 <button
                                   onClick={() => {
-                                    navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS rankings (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    player_name TEXT NOT NULL,
-    map_name TEXT NOT NULL,
-    final_time_ms INTEGER NOT NULL,
-    kart_name TEXT,
-    game_mode TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-ALTER TABLE rankings ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow public read access" ON rankings FOR SELECT USING (true);
-CREATE POLICY "Allow authenticated inserts" ON rankings FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHECK (true);`);
+                                    navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
                                     showHUDNotification('SQL 스크립트 복사 완료!', 'Supabase 대시보드 SQL Editor에 붙여넣어 실행하세요.');
                                   }}
-                                  className="px-2 py-0.5 bg-slate-950 hover:bg-slate-800 text-gray-400 hover:text-white rounded border border-slate-750 text-[10px] transition-all cursor-pointer"
+                                  className="px-2 py-0.5 bg-slate-950 hover:bg-slate-800 text-cyan-400 hover:text-white rounded border border-cyan-500/30 text-[10px] transition-all cursor-pointer font-bold"
                                 >
                                   코드 복사하기 (Copy)
                                 </button>
                               </div>
-                              <pre className="bg-slate-900/60 p-3 rounded-b-lg border-b border-x border-slate-800 text-[9.5px] text-emerald-400 overflow-x-auto max-h-[160px] leading-relaxed">
-{`CREATE TABLE IF NOT EXISTS rankings (
-    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    player_name TEXT NOT NULL,
-    map_name TEXT NOT NULL,
-    final_time_ms INTEGER NOT NULL,
-    kart_name TEXT,
-    game_mode TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
-);
-
-ALTER TABLE rankings ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Allow public read access" ON rankings FOR SELECT USING (true);
-CREATE POLICY "Allow authenticated inserts" ON rankings FOR INSERT TO authenticated WITH CHECK (true);
-CREATE POLICY "Allow anonymous inserts" ON rankings FOR INSERT TO anon WITH CHECK (true);`}
+                              <pre className="bg-slate-900/60 p-3 rounded-b-lg border-b border-x border-slate-800 text-[9.5px] text-emerald-400 overflow-x-auto max-h-[160px] leading-relaxed font-mono">
+{SUPABASE_SETUP_SQL}
                               </pre>
                             </div>
                           </div>

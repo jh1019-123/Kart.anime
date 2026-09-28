@@ -7,7 +7,7 @@ const CLOUD_URL = `https://api.restful-api.dev/objects/${CLOUD_OBJECT_ID}`;
 const AI_BOT_NAMES = [
   '다오', 'dao', '배찌', 'bazzi', '우니', 'wuni', 
   '디지니', 'dizni', '마리드', 'marid', '케피', 'kephi', 
-  '에티', 'etti', '모스', 'mos', 'ai rival'
+  '에티', 'etti', '모스', 'mos', 'ai rival', 'ai', '라이벌', 'rival', 'bot', '봇'
 ];
 
 export function isBotPlayer(name: string): boolean {
@@ -95,8 +95,9 @@ export async function fetchLiveCloudRankings(): Promise<CloudRankingItem[]> {
  * Synchronizes across all users playing on Vercel or any URL
  */
 export async function saveLiveCloudRanking(newRecord: Omit<CloudRankingItem, 'id' | 'date'>): Promise<CloudRankingItem[]> {
+  const cleanPlayerName = (newRecord.playerName || '').replace(/\s*\(나\)\s*$/, '').trim();
   // Reject bot records
-  if (isBotPlayer(newRecord.playerName)) {
+  if (!cleanPlayerName || isBotPlayer(cleanPlayerName)) {
     return [];
   }
 
@@ -105,6 +106,7 @@ export async function saveLiveCloudRanking(newRecord: Omit<CloudRankingItem, 'id
 
   const recordToSave: CloudRankingItem = {
     ...newRecord,
+    playerName: cleanPlayerName,
     id: `rec-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     date: dateStr,
     isPlayer: true
@@ -241,4 +243,31 @@ export async function updatePlayerNameInCloud(oldName: string, newName: string):
     return [];
   }
 }
+
+/**
+ * Clear all real player rankings from cloud and local cache
+ */
+export async function clearLiveCloudRankings(): Promise<boolean> {
+  try {
+    localStorage.removeItem('kart_real_players_leaderboard');
+    await fetch(CLOUD_URL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        name: 'real_players_leaderboard_live',
+        data: {
+          records: []
+        }
+      })
+    });
+    return true;
+  } catch (err) {
+    console.error('Failed to clear cloud rankings:', err);
+    return false;
+  }
+}
+
 
